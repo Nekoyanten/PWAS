@@ -10,7 +10,7 @@ const VALID_GROUPS = ["control", "experimental"];
 // Importa participantes ya seudonimizados. El backend NUNCA calcula el hash
 // a partir de un dato real: espera recibir external_hash ya generado fuera
 // de este sistema (ver README, sección "Cómo generar los hashes").
-participantsRouter.post("/import", requireAdmin, async (req, res) => {
+async function importParticipants(req, res) {
   const rows = req.body?.participants;
   if (!Array.isArray(rows) || rows.length === 0) {
     return res.status(400).json({ error: "Se espera { participants: [ { external_hash, role, team_label?, group_assignment?, consent_given? } ] }" });
@@ -53,6 +53,43 @@ participantsRouter.post("/import", requireAdmin, async (req, res) => {
     errors,
     participants: inserted,
   });
+}
+
+participantsRouter.post("/import", requireAdmin, importParticipants);
+
+// Importación por CSV. Cabecera obligatoria; columnas reconocidas:
+// external_hash, role, team_label, group_assignment, consent_given.
+// Acepta el CSV en el body como texto (Content-Type: text/csv o text/plain)
+// o como { csv: "..." } en JSON.
+participantsRouter.post("/import-csv", requireAdmin, async (req, res) => {
+  const raw = typeof req.body === "string" ? req.body : req.body?.csv;
+  if (!raw || typeof raw !== "string") {
+    return res.status(400).json({ error: "Envía el CSV como texto en el body o como { csv: \"...\" }" });
+  }
+  const lines = raw.split(/\r?\n/).filter((l) => l.trim() !== "");
+  if (lines.length < 2) return res.status(400).json({ error: "El CSV necesita una cabecera y al menos una fila" });
+
+  const split = (line) => line.split(",").map((s) => s.trim().replace(/^"(.*)"$/, "$1"));
+  const header = split(lines[0]).map((h) => h.toLowerCase());
+  const idx = (name) => header.indexOf(name);
+  if (idx("external_hash") === -1 || idx("role") === -1) {
+    return res.status(400).json({ error: "La cabecera debe incluir al menos external_hash y role" });
+  }
+
+  const participants = lines.slice(1).map((line) => {
+    const c = split(line);
+    const consent = (c[idx("consent_given")] ?? "").toLowerCase();
+    return {
+      external_hash: c[idx("external_hash")],
+      role: c[idx("role")],
+      team_label: idx("team_label") !== -1 ? c[idx("team_label")] || null : null,
+      group_assignment: idx("group_assignment") !== -1 ? c[idx("group_assignment")] || null : null,
+      consent_given: consent === "true" || consent === "1" || consent === "si" || consent === "sí",
+    };
+  });
+
+  req.body = { participants };
+  return importParticipants(req, res);
 });
 
 // Lista operativa (para asignar campañas) — expone solo id interno, hash

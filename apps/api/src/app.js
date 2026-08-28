@@ -18,6 +18,8 @@ export function createApp() {
   const app = express();
   app.use(cors());
   app.use(express.json());
+  app.use(express.urlencoded({ extended: false })); // formularios del flujo del participante
+  app.use(express.text({ type: ["text/csv", "text/plain"] })); // import de participantes por CSV
   if (process.env.NODE_ENV !== "test") app.use(morgan("tiny"));
 
   app.use(express.static(path.join(__dirname, "..", "public")));

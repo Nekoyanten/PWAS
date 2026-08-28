@@ -20,9 +20,13 @@ async function main() {
   const templateIds = [];
   for (const vector of VECTORS) {
     const r = await pool.query(
-      `INSERT INTO templates (name, vector, channel, subject_or_headline, body_ref)
-       VALUES ($1, $2, 'web', $3, 'demo-template') RETURNING id`,
-      [`Plantilla demo — ${vector}`, vector, `Aviso simulado (${vector})`]
+      `INSERT INTO templates (name, vector, channel, sender_label, subject_or_headline, message_body, cta_label, landing_kind)
+       VALUES ($1, $2, 'web', $3, $4, $5, 'Abrir', 'form') RETURNING id`,
+      [
+        `Plantilla demo — ${vector}`, vector, "Notificaciones",
+        `Aviso simulado (${vector})`,
+        `<p>Mensaje de demostración del vector <b>${vector}</b>. Pulsa el botón para continuar.</p>`,
+      ]
     );
     templateIds.push({ id: r.rows[0].id, vector });
   }
