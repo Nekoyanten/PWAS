@@ -1,0 +1,40 @@
+* { box-sizing: border-box; }
+body {
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  margin: 0;
+  background: #f4f6fb;
+  color: #1a1a1a;
+}
+header {
+  background: #1f3864;
+  color: #fff;
+  padding: 1.25rem 2rem;
+}
+header h1 { margin: 0 0 0.25rem; font-size: 1.4rem; }
+.subtitle { margin: 0 0 1rem; color: #cdd7ee; font-size: 0.9rem; }
+.apikey-bar { display: flex; gap: 0.75rem; align-items: center; }
+.apikey-bar input { padding: 0.4rem 0.6rem; border-radius: 6px; border: none; width: 220px; }
+.apikey-bar button {
+  background: #2e74b5; color: #fff; border: none; padding: 0.5rem 1rem;
+  border-radius: 6px; cursor: pointer; font-size: 0.9rem;
+}
+.apikey-bar button:hover { background: #245a8d; }
+#status { font-size: 0.85rem; color: #cdd7ee; }
+main { padding: 1.5rem 2rem 3rem; max-width: 1100px; margin: 0 auto; }
+.cards { display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.5rem; }
+.card {
+  background: #fff; border-radius: 10px; padding: 1rem 1.5rem;
+  box-shadow: 0 2px 10px rgba(0,0,0,.06); min-width: 160px;
+}
+.card .value { font-size: 1.8rem; font-weight: 700; color: #1f3864; }
+.card .label { font-size: 0.8rem; color: #666; }
+.panel {
+  background: #fff; border-radius: 10px; padding: 1.25rem 1.5rem;
+  box-shadow: 0 2px 10px rgba(0,0,0,.06); margin-bottom: 1.5rem;
+}
+.panel h2 { margin-top: 0; font-size: 1.05rem; color: #1f3864; }
+.hint { font-size: 0.82rem; color: #777; margin-top: -0.5rem; }
+table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+th, td { text-align: left; padding: 0.5rem 0.6rem; border-bottom: 1px solid #eee; }
+th { color: #555; font-weight: 600; background: #f8f9fc; }
+tr:hover td { background: #fafbff; }

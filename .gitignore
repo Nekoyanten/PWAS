@@ -1,0 +1,8 @@
+node_modules/
+.env
+.env.local
+*.log
+backups/
+loadtest/synthetic_tokens.json
+db/export_*.csv
+db/export_*.json

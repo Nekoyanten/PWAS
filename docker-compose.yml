@@ -1,0 +1,61 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: paws_campaign
+      POSTGRES_USER: paws
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme_local_lab_only}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+    ports:
+      - "127.0.0.1:5432:5432"   # solo accesible desde el propio host del laboratorio
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U paws -d paws_campaign"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: ./apps/api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://paws:${POSTGRES_PASSWORD:-changeme_local_lab_only}@postgres:5432/paws_campaign
+      NODE_ENV: production
+      PORT: 3000
+      ADMIN_API_KEY: ${ADMIN_API_KEY:-changeme_before_running}
+    ports:
+      - "0.0.0.0:3000:3000"        # accesible en la LAN del laboratorio, nunca expuesto a internet
+    volumes:
+      - ./backups:/backups
+
+  # Snapshot periódico de la base de datos durante la ejecución en vivo del piloto.
+  db-backup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    entrypoint: >
+      sh -c "while true; do
+        pg_dump -h postgres -U paws -d paws_campaign -f /backups/paws_campaign_$$(date +%Y%m%d_%H%M%S).sql;
+        sleep 900;
+      done"
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:-changeme_local_lab_only}
+    volumes:
+      - ./backups:/backups
+
+volumes:
+  pgdata:
+
+# NOTA: la versión anterior de este archivo incluía Redis + un servicio
+# web-admin separado, pensados para push en vivo por WebSocket. Esta versión
+# los quitó para llegar antes a un sistema que corre de verdad: el dashboard
+# ahora lo sirve la propia API como archivos estáticos (apps/api/public/) y
+# se actualiza con un botón "Cargar datos", no en push automático. Es un
+# "siguiente paso" documentado en apps/api/README.md, no algo perdido.

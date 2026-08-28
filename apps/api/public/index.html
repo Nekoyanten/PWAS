@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PAWS Campaign — Dashboard</title>
+<link rel="stylesheet" href="/styles.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <header>
+    <h1>PAWS — Simulación de Ingeniería Social</h1>
+    <p class="subtitle">Panel del investigador · solo datos agregados, ningún participante identificable</p>
+    <div class="apikey-bar">
+      <label>Clave de administrador
+        <input type="password" id="apiKey" placeholder="ADMIN_API_KEY">
+      </label>
+      <button id="loadBtn">Cargar datos</button>
+      <span id="status"></span>
+    </div>
+  </header>
+
+  <main>
+    <section class="cards" id="totalsCards"></section>
+
+    <section class="panel">
+      <h2>Por equipo / sala de laboratorio</h2>
+      <p class="hint">Ejemplo de lectura: "Equipo 5 — 3 de 12 participantes cayeron (25 %)". Nunca se muestra quién.</p>
+      <table id="teamTable"><thead><tr><th>Equipo</th><th>Expuestos</th><th>Caídos</th><th>Tasa de caída</th></tr></thead><tbody></tbody></table>
+    </section>
+
+    <section class="panel">
+      <h2>Detalle de caídas por equipo, escenario y motivo</h2>
+      <table id="fallsDetailTable"><thead><tr><th>Equipo</th><th>Escenario</th><th>Motivo</th><th>Participantes</th></tr></thead><tbody></tbody></table>
+    </section>
+
+    <section class="panel">
+      <h2>CTR y conversión por rol y escenario</h2>
+      <table id="roleVectorTable"><thead><tr><th>Rol</th><th>Escenario</th><th>Expuestos</th><th>CTR</th><th>Conversión</th><th>Tiempo reacción prom.</th></tr></thead><tbody></tbody></table>
+    </section>
+
+    <section class="panel">
+      <h2>Motivos de caída (global)</h2>
+      <canvas id="reasonsChart" height="120"></canvas>
+    </section>
+  </main>
+
+  <script src="/dashboard.js"></script>
+</body>
+</html>
