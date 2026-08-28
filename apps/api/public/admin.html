@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PAWS Campaign — Administración</title>
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header>
+    <h1>PAWS — Administración de campañas</h1>
+    <p class="subtitle">Plantillas · campañas · participantes · enlaces. El dashboard de resultados está en <a href="/index.html" style="color:#fff">/index.html</a></p>
+    <div class="apikey-bar">
+      <label>Clave de administrador
+        <input type="password" id="apiKey" placeholder="ADMIN_API_KEY">
+      </label>
+      <button id="connectBtn">Conectar</button>
+      <span id="status"></span>
+    </div>
+  </header>
+
+  <main>
+    <nav class="tabs">
+      <button data-tab="tpl" class="active">Plantillas</button>
+      <button data-tab="camp">Campañas</button>
+      <button data-tab="part">Participantes</button>
+    </nav>
+
+    <!-- ============ PLANTILLAS ============ -->
+    <section id="tab-tpl" class="tabpane">
+      <div class="panel">
+        <h2>Plantillas de estímulo</h2>
+        <p class="hint">Cada plantilla es un mensaje de ataque (llega a la bandeja de TaskFlow) con un vector de influencia y una página de aterrizaje.</p>
+        <button id="seedDefaultsBtn" class="btn-sm">Crear las 5 plantillas por defecto</button>
+        <table id="tplTable"><thead><tr><th>Nombre</th><th>Vector</th><th>Remitente</th><th>Aterrizaje</th><th></th></tr></thead><tbody></tbody></table>
+      </div>
+
+      <div class="panel">
+        <h2 id="tplFormTitle">Nueva plantilla</h2>
+        <form id="tplForm" class="grid2">
+          <input type="hidden" name="id">
+          <label>Nombre<input name="name" required></label>
+          <label>Vector
+            <select name="vector" required>
+              <option value="autoridad">autoridad</option>
+              <option value="urgencia">urgencia</option>
+              <option value="escasez">escasez</option>
+              <option value="prueba_social">prueba_social</option>
+              <option value="curiosidad">curiosidad</option>
+            </select>
+          </label>
+          <label>Remitente ficticio<input name="sender_label" placeholder="Coordinación Académica"></label>
+          <label>Canal
+            <select name="channel"><option>web</option><option>email_simulado</option><option>sms_simulado</option></select>
+          </label>
+          <label class="full">Asunto / titular<input name="subject_or_headline" required></label>
+          <label class="full">Cuerpo del mensaje (HTML simple)
+            <textarea name="message_body" rows="4" placeholder="<p>Confirma tus datos antes de las 17:00...</p>"></textarea>
+          </label>
+          <label>Texto del botón (CTA)<input name="cta_label" placeholder="Confirmar mis datos"></label>
+          <label>Tipo de aterrizaje
+            <select name="landing_kind" id="landingKind">
+              <option value="form">form — formulario de credenciales</option>
+              <option value="permiso">permiso — diálogo de permiso simulado</option>
+            </select>
+          </label>
+          <label class="full" id="permisoRow" style="display:none">Permiso solicitado
+            <select name="permiso"><option>camara</option><option>microfono</option><option>calendario</option><option>contactos</option><option>ubicacion</option></select>
+          </label>
+          <label class="full">Título del aterrizaje<input name="landing_titulo" placeholder="Verifica tu identidad"></label>
+          <label class="full">Detalle del aterrizaje<input name="landing_detalle"></label>
+          <div class="full form-actions">
+            <button type="submit" class="btn-sm">Guardar</button>
+            <button type="button" id="tplCancel" class="btn-sm ghost" style="display:none">Cancelar edición</button>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <!-- ============ CAMPAÑAS ============ -->
+    <section id="tab-camp" class="tabpane" hidden>
+      <div class="panel">
+        <h2>Campañas</h2>
+        <table id="campTable"><thead><tr><th>Nombre</th><th>Estado</th><th>Semilla</th><th>Pool</th><th>Enlaces</th><th>Entregados</th><th></th></tr></thead><tbody></tbody></table>
+      </div>
+
+      <div class="panel">
+        <h2>Nueva campaña</h2>
+        <form id="campForm" class="grid2">
+          <label>Nombre<input name="name" required></label>
+          <label>Semilla (opcional)<input name="seed" placeholder="se genera si lo dejas vacío"></label>
+          <div class="full">
+            <span class="hint">Plantillas en el sorteo (se reparten de forma balanceada por semilla):</span>
+            <div id="campTplChecks" class="checks"></div>
+          </div>
+          <div class="full form-actions"><button type="submit" class="btn-sm">Crear campaña</button></div>
+        </form>
+      </div>
+
+      <div class="panel" id="campDetailPanel" hidden>
+        <h2>Campaña: <span id="campDetailName"></span></h2>
+        <div class="form-actions">
+          <button id="genTokensBtn" class="btn-sm">Generar enlaces (todos los participantes sin enlace)</button>
+          <button id="deliverBtn" class="btn-sm">Entregar estímulo a todos</button>
+          <select id="campStatusSel">
+            <option value="borrador">borrador</option>
+            <option value="en_curso">en_curso</option>
+            <option value="finalizada">finalizada</option>
+            <option value="cancelada">cancelada</option>
+          </select>
+          <button id="setStatusBtn" class="btn-sm ghost">Cambiar estado</button>
+          <button id="copyLinksBtn" class="btn-sm ghost">Copiar enlaces</button>
+          <button id="downloadLinksBtn" class="btn-sm ghost">Descargar CSV</button>
+        </div>
+        <p id="campDist" class="hint"></p>
+        <table id="linksTable"><thead><tr><th>Hash</th><th>Rol</th><th>Equipo</th><th>Vector asignado</th><th>Entregado</th><th>Enlace</th></tr></thead><tbody></tbody></table>
+      </div>
+    </section>
+
+    <!-- ============ PARTICIPANTES ============ -->
+    <section id="tab-part" class="tabpane" hidden>
+      <div class="panel">
+        <h2>Importar participantes</h2>
+        <p class="hint">El <code>external_hash</code> se genera FUERA de este sistema. Nunca subas nombres, correos ni documentos.</p>
+        <h3>Opción A — CSV</h3>
+        <p class="hint">Cabecera: <code>external_hash,role,team_label,group_assignment,consent_given</code></p>
+        <textarea id="csvBox" rows="5" class="full-w" placeholder="external_hash,role,team_label
+h_001,estudiante,Equipo 1
+h_002,profesor,Equipo 1"></textarea>
+        <button id="importCsvBtn" class="btn-sm">Importar CSV</button>
+        <h3>Opción B — JSON</h3>
+        <textarea id="jsonBox" rows="5" class="full-w" placeholder='{"participants":[{"external_hash":"h_001","role":"estudiante","team_label":"Equipo 1"}]}'></textarea>
+        <button id="importJsonBtn" class="btn-sm">Importar JSON</button>
+        <span id="importMsg" class="hint"></span>
+      </div>
+      <div class="panel">
+        <h2>Participantes (<span id="partCount">0</span>)</h2>
+        <table id="partTable"><thead><tr><th>Hash</th><th>Rol</th><th>Equipo</th><th>Grupo</th><th>Consent.</th></tr></thead><tbody></tbody></table>
+      </div>
+    </section>
+  </main>
+
+  <script src="/admin.js"></script>
+</body>
+</html>

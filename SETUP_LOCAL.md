@@ -46,8 +46,19 @@ npm run seed:demo      # datos sintéticos de demostración
 npm start
 ```
 
-Abrir <http://localhost:3000/index.html>, pegar `ADMIN_API_KEY` en
-"Clave de administrador" y pulsar "Cargar datos".
+- **Administración** (crear plantillas, campañas, importar participantes,
+  generar enlaces): <http://localhost:3000/admin.html>
+- **Dashboard** de resultados: <http://localhost:3000/index.html>
+
+En ambas páginas, pega el `ADMIN_API_KEY` del `.env` en "Clave de administrador".
+
+## App señuelo "TaskFlow" (vista del participante)
+
+Los enlaces `/t/<token>` que genera el panel de admin son la simulación:
+consentimiento → tablero TaskFlow + bandeja → mensaje-estímulo → aterrizaje
+(formulario o permiso simulado) → "Finalizar piloto" → encuesta adaptada al
+vector → debriefing. Ábrelos en ventana de incógnito para probarlos como un
+participante.
 
 ## Pruebas
 

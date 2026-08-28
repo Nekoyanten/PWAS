@@ -33,7 +33,11 @@ dashboardRouter.get("/overview", requireAdmin, async (req, res) => {
         COUNT(DISTINCT CASE WHEN s.fell_for_attack THEN pc.id END) AS total_caidos,
         ROUND(COUNT(DISTINCT CASE WHEN s.fell_for_attack THEN pc.id END)::numeric
               / NULLIF(COUNT(DISTINCT pc.id),0) * 100, 1) AS tasa_caida_pct,
-        ROUND(AVG(e.reaction_time_ms) FILTER (WHERE e.event_type = 'clic'), 0) AS tiempo_reaccion_promedio_ms
+        ROUND(AVG(e.reaction_time_ms) FILTER (WHERE e.event_type = 'clic'), 0) AS tiempo_reaccion_promedio_ms,
+        COUNT(DISTINCT CASE WHEN e.event_type = 'reportado' THEN pc.id END) AS total_reportes,
+        COUNT(DISTINCT CASE WHEN e.event_type = 'permiso_concedido' THEN pc.id END) AS total_permisos_concedidos,
+        ROUND(COUNT(DISTINCT CASE WHEN s.recognized_as_simulated THEN pc.id END)::numeric
+              / NULLIF(COUNT(DISTINCT s.participant_campaign_id),0) * 100, 1) AS tasa_reconocimiento_pct
       FROM participant_campaign pc
       LEFT JOIN post_session_survey s ON s.participant_campaign_id = pc.id
       LEFT JOIN events e ON e.participant_campaign_id = pc.id

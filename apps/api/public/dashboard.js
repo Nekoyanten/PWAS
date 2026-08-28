@@ -32,6 +32,9 @@ function renderTotals(t) {
     { label: "Total caídos", value: t.total_caidos ?? 0 },
     { label: "Tasa de caída", value: (t.tasa_caida_pct ?? 0) + "%" },
     { label: "Tiempo reacción prom.", value: (t.tiempo_reaccion_promedio_ms ?? "—") + " ms" },
+    { label: "Reportaron sospecha", value: t.total_reportes ?? 0 },
+    { label: "Permisos concedidos", value: t.total_permisos_concedidos ?? 0 },
+    { label: "Reconocieron simulación", value: (t.tasa_reconocimiento_pct ?? 0) + "%" },
   ];
   el.innerHTML = items
     .map((i) => `<div class="card"><div class="value">${i.value}</div><div class="label">${i.label}</div></div>`)
@@ -81,6 +84,8 @@ function renderRoleVectorTable(rows) {
         <td>${r.total_expuestos}</td>
         <td>${r.ctr_pct ?? 0}%</td>
         <td>${r.conversion_pct ?? 0}%</td>
+        <td>${r.total_permisos_concedidos ?? 0}</td>
+        <td>${r.total_reportes ?? 0}</td>
         <td>${r.tiempo_reaccion_promedio_ms ?? "—"} ms</td>
       </tr>`
     )
