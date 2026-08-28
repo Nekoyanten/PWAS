@@ -80,7 +80,7 @@ export function debriefText(vector) {
     escasez: "apelaba a la escasez",
     prueba_social: "usaba prueba social",
     curiosidad: "despertaba curiosidad",
-  }[vector] || "usaba una técnica de influencia";
+  }[vector] || "usaba una técnica de influencia (autoridad, urgencia, escasez, prueba social o curiosidad)";
 
   return `Durante este piloto participaste, además de en una prueba de usabilidad real,
 en una <strong>simulación autorizada de ingeniería social</strong> de carácter académico.
@@ -100,13 +100,20 @@ Si tienes cualquier duda o quieres que tus datos se excluyan del análisis, cont
 con el equipo de investigación.`;
 }
 
+// Pregunta genérica cuando no se puede atribuir un vector concreto (p.ej. el
+// participante nunca recibió un mensaje de ataque).
+const GENERIC_QUESTION = {
+  text: "Si en algún momento actuaste sobre un mensaje (hiciste clic, llenaste un formulario o autorizaste algo), ¿qué te llevó a hacerlo?",
+  options: ["Parecía urgente", "Parecía venir de una autoridad", "Ofrecía un beneficio", "Otros ya lo habían hecho", "Me dio curiosidad", "No actué sobre ningún mensaje"],
+};
+
 // Construye el esquema de la encuesta para un vector dado (lo consume el
-// frontend de la página /t/:token/survey).
+// frontend de la página /t/:token/survey). `vector` puede ser null.
 export function buildSurveySchema(vector) {
   return {
-    vector,
-    vector_question: VECTOR_QUESTION[vector] || VECTOR_QUESTION.autoridad,
+    vector: vector || null,
+    vector_question: (vector && VECTOR_QUESTION[vector]) || GENERIC_QUESTION,
     common: COMMON_QUESTIONS,
-    default_reason: DEFAULT_REASON_BY_VECTOR[vector] || "no_aplica",
+    default_reason: (vector && DEFAULT_REASON_BY_VECTOR[vector]) || "no_aplica",
   };
 }

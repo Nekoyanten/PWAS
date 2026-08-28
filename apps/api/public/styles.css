@@ -64,7 +64,10 @@ form.grid2 input, form.grid2 select, form.grid2 textarea {
 }
 .btn-xs { padding: 0.2rem 0.5rem; font-size: 0.78rem; }
 .btn-sm.ghost, .btn-xs.ghost { background: #e6eaf2; color: #41506b; }
+.btn-sm.danger, .btn-xs.danger { background: #dc2626; }
 .btn-sm:hover { background: #245a8d; }
+#msgTable, #linksTable { font-size: 0.82rem; }
+#msgTable td, #linksTable td { padding: 0.4rem 0.5rem; }
 .checks { display: grid; grid-template-columns: 1fr 1fr; gap: 0.3rem; margin-top: 0.4rem; }
 .checks .chk { font-size: 0.85rem; color: #33415c; }
 .checks .chk em { color: #8592a8; }

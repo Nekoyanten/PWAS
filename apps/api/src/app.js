@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { participantsRouter } from "./routes/participants.js";
 import { templatesRouter } from "./routes/templates.js";
 import { campaignsRouter } from "./routes/campaigns.js";
+import { messagesRouter } from "./routes/messages.js";
 import { trackingRouter } from "./routes/tracking.js";
 import { dashboardRouter } from "./routes/dashboard.js";
 import { exportRouter } from "./routes/export.js";
@@ -36,6 +37,7 @@ export function createApp() {
   app.use("/api/participants", participantsRouter);
   app.use("/api/templates", templatesRouter);
   app.use("/api/campaigns", campaignsRouter);
+  app.use("/api", messagesRouter); // /api/campaigns/:id/messages, /api/messages/:id/*
   app.use("/api/dashboard", dashboardRouter);
   app.use("/api/export", exportRouter);
   app.use("/t", trackingRouter);
