@@ -126,7 +126,7 @@ trackingRouter.get("/:token/app", async (req, res) => {
     await query(`UPDATE participant_campaign SET session_started_at = now() WHERE id = $1 AND session_started_at IS NULL`, [pc.id]);
   }
   const inbox = await buildInbox(pc.id);
-  res.set(HTML).send(renderApp(pc.access_token, { inbox }));
+  res.set(HTML).send(renderApp(pc.access_token, { inbox, view: req.query.v }));
 });
 
 // Bandeja en JSON para el sondeo en vivo del tablero (sin recargar la página).

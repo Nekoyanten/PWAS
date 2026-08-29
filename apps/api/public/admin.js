@@ -122,13 +122,20 @@ $("#campForm").addEventListener("submit", async (e) => {
   } catch (err) { alert(err.message); }
 });
 
+function linkBase() {
+  const v = ($("#linkBase").value || "").trim().replace(/\/+$/, "");
+  return v || location.origin;
+}
+if ($("#linkBase") && !$("#linkBase").value) $("#linkBase").value = location.origin;
+$("#linkBase") && $("#linkBase").addEventListener("change", () => { if (CURRENT_CAMP) loadLinks(); });
+
 async function loadLinks() {
   const { links } = await api("GET", `/api/campaigns/${CURRENT_CAMP}/links`);
   LINKS = links;
   $("#linksTable tbody").innerHTML = links.map((l) => `<tr>
     <td><code>${esc(l.external_hash)}</code></td><td>${esc(l.role)}</td><td>${esc(l.team_label || "—")}</td>
     <td>${l.mensajes}</td><td>${l.encuesta ? "sí" : "no"}</td>
-    <td><a href="${l.url}" target="_blank">${location.origin}${l.url}</a></td>
+    <td><a href="${l.url}" target="_blank">${esc(linkBase())}${l.url}</a></td>
     <td><button class="btn-xs ghost" data-reset="${l.id}">reiniciar</button></td>
   </tr>`).join("") || `<tr><td colspan="7" class="hint">Aún no hay enlaces. Pulsa "Generar enlaces para todos".</td></tr>`;
   $$("#linksTable [data-reset]").forEach((b) => b.onclick = async () => {
@@ -206,11 +213,11 @@ $("#resetCampBtn").addEventListener("click", async () => {
   catch (e) { alert(e.message); }
 });
 $("#copyLinksBtn").addEventListener("click", () => {
-  navigator.clipboard.writeText(LINKS.map((l) => `${l.external_hash}\t${location.origin}${l.url}`).join("\n"))
+  navigator.clipboard.writeText(LINKS.map((l) => `${l.external_hash}\t${linkBase()}${l.url}`).join("\n"))
     .then(() => statusEl.textContent = "Enlaces copiados ✓");
 });
 $("#downloadLinksBtn").addEventListener("click", () => {
-  const rows = [["external_hash", "role", "team_label", "url"]].concat(LINKS.map((l) => [l.external_hash, l.role, l.team_label || "", location.origin + l.url]));
+  const rows = [["external_hash", "role", "team_label", "url"]].concat(LINKS.map((l) => [l.external_hash, l.role, l.team_label || "", linkBase() + l.url]));
   const csv = rows.map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" })); a.download = "enlaces.csv"; a.click();

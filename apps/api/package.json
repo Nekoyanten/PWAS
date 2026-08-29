@@ -10,7 +10,7 @@
     "db:init": "psql \"$DATABASE_URL\" -f ../../db/schema.sql",
     "db:migrate": "psql \"$DATABASE_URL\" -f ../../db/migrations/001_taskflow_decoy.sql",
     "seed:demo": "node scripts/seed_demo.js",
-    "test": "node --test tests/unit/*.test.js tests/integration/*.test.js"
+    "test": "node --test --test-concurrency=1 tests/unit/*.test.js tests/integration/*.test.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

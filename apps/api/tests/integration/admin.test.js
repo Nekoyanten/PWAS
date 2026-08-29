@@ -6,6 +6,7 @@ import "dotenv/config";
 import { createApp } from "../../src/app.js";
 import { pool } from "../../src/db.js";
 import { STANDARD_LIBRARY } from "../../src/routes/templates.js";
+import { cleanupTestData } from "../helpers/cleanup.js";
 
 process.env.NODE_ENV = "test";
 process.env.ADMIN_API_KEY = process.env.ADMIN_API_KEY || "test_key_local_only";
@@ -14,7 +15,7 @@ let server, baseUrl;
 const jh = { "x-api-key": process.env.ADMIN_API_KEY, "Content-Type": "application/json" };
 
 before(() => { server = createApp().listen(0); baseUrl = `http://localhost:${server.address().port}`; });
-after(async () => { server.close(); await pool.end(); });
+after(async () => { server.close(); await cleanupTestData(); await pool.end(); });
 
 const api = async (method, path, body) => {
   const res = await fetch(`${baseUrl}${path}`, { method, headers: jh, body: body === undefined ? undefined : JSON.stringify(body) });

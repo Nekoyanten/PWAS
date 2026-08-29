@@ -13,6 +13,7 @@ import "dotenv/config";
 import { createApp } from "../../src/app.js";
 import { pool } from "../../src/db.js";
 import { assignBalanced } from "../../src/lib/rng.js";
+import { cleanupTestData } from "../helpers/cleanup.js";
 
 process.env.NODE_ENV = "test";
 process.env.ADMIN_API_KEY = process.env.ADMIN_API_KEY || "test_key_local_only";
@@ -22,7 +23,7 @@ const key = process.env.ADMIN_API_KEY;
 const jh = { "x-api-key": key, "Content-Type": "application/json" };
 
 before(async () => { server = createApp().listen(0); baseUrl = `http://localhost:${server.address().port}`; });
-after(async () => { server.close(); await pool.end(); });
+after(async () => { server.close(); await cleanupTestData(); await pool.end(); });
 
 async function api(method, path, body) {
   const res = await fetch(`${baseUrl}${path}`, { method, headers: jh, body: body === undefined ? undefined : JSON.stringify(body) });

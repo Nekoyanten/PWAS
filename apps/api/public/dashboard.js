@@ -48,7 +48,7 @@ async function loadAll() {
 
 function scheduleAuto() {
   if (timer) { clearTimeout(timer); timer = null; }
-  if ($("#autoChk").checked) timer = setTimeout(loadAll, 20000);
+  if ($("#autoChk").checked) timer = setTimeout(loadAll, 8000);
 }
 
 function renderTotals(d) {

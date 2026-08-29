@@ -21,6 +21,7 @@ function shell(title, bodyHtml, opts = {}) {
 <title>${escapeHtml(title)}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;600;700&display=swap" rel="stylesheet">
+${opts.head || ""}
 <style>${BASE_CSS}${opts.extraCss || ""}</style></head><body class="${opts.bodyClass || ""}">${bodyHtml}</body></html>`;
 }
 
@@ -59,11 +60,13 @@ button{font:inherit}
 .rail{background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;padding:.9rem .7rem;gap:.15rem}
 .rail .brand{display:flex;align-items:center;gap:.55rem;font-weight:700;font-size:.98rem;padding:.35rem .5rem .9rem}
 .rail .brand svg{width:22px;height:22px}
-.rail a,.rail .navitem{display:flex;align-items:center;gap:.6rem;padding:.5rem .55rem;border-radius:8px;color:var(--ink-2);font-weight:500;font-size:.875rem}
-.rail a:hover{background:var(--line-soft)}
-.rail a.active{background:var(--brand-tint);color:var(--brand-strong)}
-.rail a.active svg{color:var(--brand)}
-.rail svg{width:17px;height:17px;color:var(--muted)}
+.rail a,.rail .navitem{display:flex;align-items:center;gap:.6rem;padding:.5rem .55rem;border-radius:8px;color:var(--ink-2);font-weight:500;font-size:.875rem;width:100%;background:none;border:0;font-family:inherit;text-align:left;cursor:pointer}
+.rail a:hover,.rail .navitem:hover{background:var(--line-soft)}
+.rail a.active,.rail .navitem.active{background:var(--brand-tint);color:var(--brand-strong)}
+.rail a.active svg,.rail .navitem.active svg{color:var(--brand)}
+.rail .navitem>span{flex:1}
+.rail-badge{background:var(--brand);color:#fff;border-radius:20px;font-size:.7rem;font-weight:700;padding:.02rem .42rem;min-width:1.1rem;text-align:center;flex:none}
+.rail svg{width:17px;height:17px;color:var(--muted);flex:none}
 .rail .spring{flex:1}
 .rail .u{display:flex;align-items:center;gap:.55rem;padding:.5rem .55rem;font-size:.83rem;color:var(--muted)}
 
@@ -171,7 +174,7 @@ button{font:inherit}
 .donemark{width:52px;height:52px;border-radius:50%;background:var(--brand-tint);color:var(--brand);display:flex;align-items:center;justify-content:center;margin:0 auto 1rem}
 .donemark svg{width:26px;height:26px}
 
-@media(max-width:1080px){
+@media(max-width:1400px){
   .workspace{flex-direction:column}
   .inbox{width:100%;position:static}
 }
@@ -193,6 +196,9 @@ const I = {
   check: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>`,
   clock: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>`,
   back: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>`,
+  pencil: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>`,
+  trash: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="m19 6-1 14H6L5 6"/></svg>`,
+  plus: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>`,
 };
 const AV_COLORS = ["#4f46e5", "#0f9d7a", "#d97706", "#db2777", "#0284c7"];
 const avatar = (name) => {
@@ -202,19 +208,47 @@ const avatar = (name) => {
   return `<span class="avatar" style="background:${AV_COLORS[h % AV_COLORS.length]}">${escapeHtml(init)}</span>`;
 };
 
-function rail(active) {
-  const item = (key, icon, label, href) =>
-    `<a class="${active === key ? "active" : ""}" ${href ? `href="${href}"` : ""}>${icon}<span>${label}</span></a>`;
+// Las 5 vistas de la app señuelo. En renderApp se conmutan en cliente (sin
+// recarga); en las páginas sueltas (renderMessage) el rail es un enlace normal
+// que vuelve a /app?v=<vista>.
+const VIEWS = [
+  { key: "inicio", icon: I.home, label: "Inicio", title: "Inicio" },
+  { key: "tablero", icon: I.board, label: "Mi tablero", title: "Mi tablero" },
+  { key: "bandeja", icon: I.inbox, label: "Bandeja", title: "Bandeja" },
+  { key: "agenda", icon: I.cal, label: "Agenda", title: "Agenda" },
+  { key: "equipo", icon: I.team, label: "Equipo", title: "Equipo" },
+];
+const DEFAULT_VIEW = "tablero";
+const viewTitle = (key) => (VIEWS.find((v) => v.key === key) || VIEWS[1]).title;
+const isView = (key) => VIEWS.some((v) => v.key === key);
+
+function rail(active, token, spa) {
+  const t = encodeURIComponent(token || "");
+  const items = VIEWS.map((v) => {
+    const cls = `navitem${active === v.key ? " active" : ""}`;
+    const badge = v.key === "bandeja" ? `<span class="rail-badge" data-ibbadge hidden></span>` : "";
+    return spa
+      ? `<button type="button" class="${cls}" data-view="${v.key}">${v.icon}<span>${v.label}</span>${badge}</button>`
+      : `<a class="${cls}" href="/t/${t}/app?v=${v.key}">${v.icon}<span>${v.label}</span>${badge}</a>`;
+  }).join("");
   return `<nav class="rail">
     <div class="brand">${LOGO}<span>TaskFlow</span></div>
-    ${item("home", I.home, "Inicio")}
-    ${item("board", I.board, "Mi tablero")}
-    ${item("inbox", I.inbox, "Bandeja")}
-    ${item("cal", I.cal, "Agenda")}
-    ${item("team", I.team, "Equipo")}
+    ${items}
     <div class="spring"></div>
     <div class="u">${avatar("Tú")}<span>Sesión del piloto</span></div>
   </nav>`;
+}
+
+function inboxRowsHtml(inbox, t) {
+  return inbox.map((m) => `
+    <a class="mrow msg ${m.unread ? "unread" : ""}" href="/t/${t}/d/${encodeURIComponent(m.deliveryId)}">
+      <span class="ic">${m.kind === "task" ? I.task : I.mail}</span>
+      <span class="bd">
+        <span class="l1"><span class="from">${escapeHtml(m.from)}</span><span class="tag">${m.kind === "task" ? "tarea" : "correo"}</span></span>
+        <span class="sj">${escapeHtml(m.subject)}</span>
+        <span class="pv">${escapeHtml((m.body || "").replace(/<[^>]+>/g, "").slice(0, 90))}</span>
+      </span>
+    </a>`).join("");
 }
 
 // ---------------------------------------------------------------------------
@@ -241,52 +275,162 @@ export function renderWelcome(token, campaignName) {
 </div>`);
 }
 
-export function renderApp(token, { inbox }) {
+export function renderApp(token, { inbox, view }) {
   const t = encodeURIComponent(token);
   const unread = inbox.filter((m) => m.unread).length;
+  const active = isView(view) ? view : DEFAULT_VIEW;
 
-  const columns = [
-    { t: "Por hacer", cards: [
-      { tt: "Preparar el informe semanal del proyecto", labs: [["doc", "documentos"]], who: "María L.", due: "Hoy", overdue: true },
-      { tt: "Revisar las tarjetas pendientes del sprint", labs: [["dev", "desarrollo"]], who: "Tú", due: "Mié" },
-      { tt: "Responder los mensajes del canal del equipo", labs: [], who: "Tú" }] },
-    { t: "En progreso", cards: [
-      { tt: "Actualizar el tablero de seguimiento", labs: [["dev", "desarrollo"]], who: "Tú", due: "Jue" },
-      { tt: "Agendar la reunión de seguimiento mensual", labs: [["ops", "operaciones"]], who: "Carlos R." }] },
-    { t: "Hecho", cards: [
-      { tt: "Enviar el acta de la reunión anterior", labs: [["doc", "documentos"]], who: "Tú" }] },
+  // Tablero inicial. A partir de aquí lo gestiona Alpine.js en el navegador del
+  // participante y se guarda SOLO en su localStorage (nunca llega al servidor:
+  // ver nota de privacidad de schema.sql). El admin no ve estas tarjetas.
+  const defaultBoard = [
+    { id: "todo", title: "Por hacer", cards: [
+      { id: "s1", title: "Preparar el informe semanal del proyecto", who: "María L.", due: "Hoy", overdue: true, labels: [{ cls: "doc", text: "documentos" }] },
+      { id: "s2", title: "Revisar las tarjetas pendientes del sprint", who: "Tú", due: "Mié", labels: [{ cls: "dev", text: "desarrollo" }] },
+      { id: "s3", title: "Responder los mensajes del canal del equipo", who: "Tú", labels: [] } ] },
+    { id: "doing", title: "En progreso", cards: [
+      { id: "s4", title: "Actualizar el tablero de seguimiento", who: "Tú", due: "Jue", labels: [{ cls: "dev", text: "desarrollo" }] },
+      { id: "s5", title: "Agendar la reunión de seguimiento mensual", who: "Carlos R.", labels: [{ cls: "ops", text: "operaciones" }] } ] },
+    { id: "done", title: "Hecho", cards: [
+      { id: "s6", title: "Enviar el acta de la reunión anterior", who: "Tú", labels: [{ cls: "doc", text: "documentos" }] } ] },
   ];
 
-  const board = columns.map((c) => `
-    <div class="col" data-col ondragover="event.preventDefault()" ondrop="tfDrop(event)">
-      <div class="col-head"><span class="t">${c.t}</span><span class="n">${c.cards.length}</span></div>
-      ${c.cards.map((k) => `<div class="tcard" draggable="true" ondragstart="tfDrag(event)">
-        <div class="tt">${escapeHtml(k.tt)}</div>
-        ${k.labs.length || k.due ? `<div class="labels">
-          ${k.labs.map(([cl, tx]) => `<span class="lab ${cl}">${tx}</span>`).join("")}
-          ${k.due ? `<span class="lab ${k.overdue ? "due" : "ops"}">${escapeHtml(k.due)}</span>` : ""}
-        </div>` : ""}
-        <div class="foot"><span class="meta">${avatar(k.who)} ${escapeHtml(k.who)}</span></div>
-      </div>`).join("")}
-    </div>`).join("");
+  const rows = inboxRowsHtml(inbox, t);
+  const emptyInbox = '<div class="empty">No tienes mensajes.</div>';
 
-  const rows = inbox.map((m) => `
-    <a class="mrow msg ${m.unread ? "unread" : ""}" href="/t/${t}/d/${encodeURIComponent(m.deliveryId)}">
-      <span class="ic">${m.kind === "task" ? I.task : I.mail}</span>
-      <span class="bd">
-        <span class="l1"><span class="from">${escapeHtml(m.from)}</span><span class="tag">${m.kind === "task" ? "tarea" : "correo"}</span></span>
-        <span class="sj">${escapeHtml(m.subject)}</span>
-        <span class="pv">${escapeHtml((m.body || "").replace(/<[^>]+>/g, "").slice(0, 90))}</span>
-      </span>
-    </a>`).join("");
+  const team = [
+    ["María L.", "Coordinación"], ["Carlos R.", "Operaciones"],
+    ["Ana P.", "Desarrollo"], ["Diego S.", "Documentación"], ["Tú", "Participante del piloto"],
+  ];
+  const week = [
+    ["Lun", ["10:00 · Reunión de equipo"]], ["Mar", []],
+    ["Mié", ["15:30 · Revisión del sprint"]], ["Jue", []],
+    ["Vie", ["10:00 · Seguimiento semanal", "16:00 · Cierre de tareas"]],
+  ];
+
+  const panel = (key, html) => `<section class="view${active === key ? " active" : ""}" data-view-panel="${key}">${html}</section>`;
+
+  const viewInicio = `
+    <div class="home-view">
+      <h2>Hola 👋</h2>
+      <p class="hint">Bienvenido/a a TaskFlow. Este es tu resumen de hoy.</p>
+      <div class="home-cards">
+        <div class="hc"><div class="hc-n" data-tfcount>6</div><div class="hc-l">tarjetas en tu tablero</div></div>
+        <div class="hc"><div class="hc-n" data-ibcount>${unread}</div><div class="hc-l">mensajes sin leer</div></div>
+        <div class="hc"><div class="hc-n">4</div><div class="hc-l">reuniones esta semana</div></div>
+      </div>
+      <div class="home-actions">
+        <button class="btn" type="button" data-goto="tablero">Ir a mi tablero</button>
+        <button class="btn ghost" type="button" data-goto="bandeja">Ver la bandeja</button>
+      </div>
+    </div>`;
+
+  const viewTablero = `
+    <div class="workspace">
+      <div class="board-area" x-data="tfBoard()">
+        <div class="board-head">
+          <h2>Tareas del equipo</h2>
+          <span class="pill" x-text="count + (count === 1 ? ' tarjeta' : ' tarjetas')">6 tarjetas</span>
+        </div>
+        <div class="columns" x-cloak>
+          <template x-for="col in columns" :key="col.id">
+            <div class="col" :class="{ 'col-over': overCol === col.id }"
+                 @dragover.prevent="overCol = col.id" @dragleave="overCol = null" @drop.prevent="drop(col.id)">
+              <div class="col-head"><span class="t" x-text="col.title"></span><span class="n" x-text="col.cards.length"></span></div>
+
+              <template x-for="card in col.cards" :key="card.id">
+                <div class="tcard" draggable="true"
+                     @dragstart="drag(card.id, col.id)" @dragend="dragId = null; overCol = null">
+                  <template x-if="editId === card.id">
+                    <form class="tcard-edit" @submit.prevent="saveEdit(card)">
+                      <textarea x-model="editText" x-ref="edit" rows="2"
+                                @keydown.escape="editId = null" @keydown.enter.prevent="saveEdit(card)"></textarea>
+                      <div class="tcard-actions">
+                        <button class="btn tiny" type="submit">Guardar</button>
+                        <button class="btn tiny ghost" type="button" @click="editId = null">Cancelar</button>
+                      </div>
+                    </form>
+                  </template>
+                  <template x-if="editId !== card.id">
+                    <div>
+                      <div class="tt" x-text="card.title" @dblclick="startEdit(card)" title="Doble clic para editar"></div>
+                      <div class="labels" x-show="(card.labels && card.labels.length) || card.due">
+                        <template x-for="lab in (card.labels || [])" :key="lab.text">
+                          <span class="lab" :class="lab.cls" x-text="lab.text"></span>
+                        </template>
+                        <template x-if="card.due">
+                          <span class="lab" :class="card.overdue ? 'due' : 'ops'" x-text="card.due"></span>
+                        </template>
+                      </div>
+                      <div class="foot">
+                        <span class="meta">
+                          <span class="avatar" :style="{ background: avatar(card.who).color }" x-text="avatar(card.who).init"></span>
+                          <span x-text="card.who"></span>
+                        </span>
+                        <span class="tcard-tools">
+                          <button class="tcard-btn" type="button" @click="startEdit(card)" title="Editar">${I.pencil}</button>
+                          <button class="tcard-btn" type="button" @click="removeCard(col.id, card.id)" title="Eliminar">${I.trash}</button>
+                        </span>
+                      </div>
+                    </div>
+                  </template>
+                </div>
+              </template>
+
+              <template x-if="col.cards.length === 0 && addCol !== col.id">
+                <div class="col-empty">Arrastra tarjetas aquí o añade una nueva.</div>
+              </template>
+
+              <template x-if="addCol === col.id">
+                <form class="tcard tcard-add" @submit.prevent="addCard(col.id)">
+                  <textarea x-model="addText" x-ref="add" rows="2" placeholder="Escribe una tarea…"
+                            @keydown.escape="addCol = null" @keydown.enter.prevent="addCard(col.id)"></textarea>
+                  <div class="tcard-actions">
+                    <button class="btn tiny" type="submit">Añadir tarjeta</button>
+                    <button class="btn tiny ghost" type="button" @click="addCol = null">Cancelar</button>
+                  </div>
+                </form>
+              </template>
+
+              <button class="col-add" type="button" x-show="addCol !== col.id" @click="startAdd(col.id)">
+                ${I.plus}<span>Añadir una tarjeta</span>
+              </button>
+            </div>
+          </template>
+        </div>
+      </div>
+      <aside class="inbox" id="inbox">
+        <h3>${I.inbox}<span>Bandeja</span><span class="ib-badge" data-ibbadge${unread ? "" : " hidden"}>${unread || ""}</span></h3>
+        <div data-ibrows>${rows || emptyInbox}</div>
+      </aside>
+    </div>`;
+
+  const viewBandeja = `
+    <div class="inbox-full">
+      <h3>Bandeja de entrada</h3>
+      <div data-ibrows>${rows || emptyInbox}</div>
+    </div>`;
+
+  const viewAgenda = `
+    <div class="board-head"><h2>Esta semana</h2><span class="pill">vista de ejemplo</span></div>
+    <div class="agenda-grid">
+      ${week.map(([d, evs]) => `<div class="day"><div class="dname">${d}</div>
+        ${evs.map((e) => `<div class="ev">${escapeHtml(e)}</div>`).join("")}</div>`).join("")}
+    </div>`;
+
+  const viewEquipo = `
+    <div class="board-head"><h2>Tu equipo</h2><span class="pill">${team.length} personas</span></div>
+    <div class="team-grid">
+      ${team.map(([nm, rl]) => `<div class="tm">${avatar(nm)}<div><div class="nm">${escapeHtml(nm)}</div><div class="rl">${escapeHtml(rl)}</div></div></div>`).join("")}
+    </div>`;
 
   return shell("TaskFlow", `
 <div class="app">
   <div class="tf-toast" id="tftoast" onclick="this.classList.remove('show')"></div>
-  ${rail("board")}
+  ${rail(active, token, true)}
   <div class="main">
     <div class="topbar">
-      <h1>Mi tablero</h1><span class="crumb">/ Proyecto piloto</span>
+      <h1 id="tf-title">${escapeHtml(viewTitle(active))}</h1><span class="crumb">/ Proyecto piloto</span>
       <span class="spring"></span>
       <form method="POST" action="/t/${t}/finish" style="margin:0"
         onsubmit="return confirm('¿Terminar el piloto y pasar a las preguntas finales?')">
@@ -294,33 +438,111 @@ export function renderApp(token, { inbox }) {
       </form>
     </div>
     <div class="content">
-      <div class="workspace">
-        <div class="board-area">
-          <div class="board-head"><h2>Tareas del equipo</h2><span class="pill">6 tarjetas</span></div>
-          <div class="columns">${board}</div>
-        </div>
-        <aside class="inbox" id="inbox">
-          <h3>${I.inbox}<span>Bandeja</span><span class="ib-badge" id="ibbadge"${unread ? "" : " hidden"}>${unread || ""}</span></h3>
-          <div id="ibrows">${rows || '<div class="empty">No tienes mensajes.</div>'}</div>
-        </aside>
-      </div>
+      ${panel("inicio", viewInicio)}
+      ${panel("tablero", viewTablero)}
+      ${panel("bandeja", viewBandeja)}
+      ${panel("agenda", viewAgenda)}
+      ${panel("equipo", viewEquipo)}
     </div>
   </div>
 </div>
 <script>
 var TF=${JSON.stringify(token)};
 function tfPing(){try{navigator.sendBeacon('/t/'+encodeURIComponent(TF)+'/usability')}catch(e){}}
-var _d=null;
-function tfDrag(e){_d=e.currentTarget;e.dataTransfer.effectAllowed='move'}
-function tfDrop(e){e.preventDefault();if(_d){e.currentTarget.appendChild(_d);_d=null;tfPing()}}
-document.querySelectorAll('.tcard').forEach(function(c){c.addEventListener('click',tfPing)});
+
+// --- Tablero kanban (Alpine.js). Estado SOLO en localStorage del participante:
+//     crear / editar / borrar / arrastrar tarjetas. Nunca se envía al servidor. ---
+function tfBoard(){
+  var LS='tf_board_'+TF;
+  var DEFAULT=${JSON.stringify(defaultBoard)};
+  function uid(){ return 'k'+Math.random().toString(36).slice(2,9)+Date.now().toString(36).slice(-3); }
+  return {
+    columns: [], dragId: null, dragFrom: null, overCol: null,
+    editId: null, editText: '', addCol: null, addText: '',
+    get count(){ return this.columns.reduce(function(n,c){ return n + c.cards.length; }, 0); },
+    init(){
+      var saved=null;
+      try{ saved=JSON.parse(localStorage.getItem(LS)); }catch(e){}
+      this.columns=(saved && Array.isArray(saved) && saved.length) ? saved : JSON.parse(JSON.stringify(DEFAULT));
+      this.sync();
+      this.$watch('columns', function(){ this.sync(); }.bind(this));
+    },
+    sync(){
+      try{ localStorage.setItem(LS, JSON.stringify(this.columns)); }catch(e){}
+      var n=this.count;
+      document.querySelectorAll('[data-tfcount]').forEach(function(el){ el.textContent=n; });
+    },
+    avatar(name){
+      var s=String(name||'?'), parts=s.split(' ').filter(Boolean);
+      var init=(parts.slice(0,2).map(function(w){ return w[0]||''; }).join('')||'?').toUpperCase();
+      var h=0; for(var i=0;i<s.length;i++){ h=(h*31 + s.charCodeAt(i))>>>0; }
+      var c=['#4f46e5','#0f9d7a','#d97706','#db2777','#0284c7'];
+      return { init: init, color: c[h % c.length] };
+    },
+    startAdd(colId){ this.editId=null; this.addCol=colId; this.addText=''; this.$nextTick(function(){ this.$refs.add && this.$refs.add.focus(); }.bind(this)); },
+    addCard(colId){
+      var text=(this.addText||'').trim(); if(!text) return;
+      var col=this.columns.find(function(c){ return c.id===colId; }); if(!col) return;
+      col.cards.push({ id: uid(), title: text, who: 'Tú', labels: [], due: null });
+      this.addText=''; this.addCol=null; this.sync(); tfPing();
+    },
+    startEdit(card){ this.addCol=null; this.editId=card.id; this.editText=card.title; this.$nextTick(function(){ this.$refs.edit && this.$refs.edit.focus(); }.bind(this)); },
+    saveEdit(card){ var v=(this.editText||'').trim(); if(v) card.title=v; this.editId=null; this.sync(); tfPing(); },
+    removeCard(colId, cardId){
+      var col=this.columns.find(function(c){ return c.id===colId; }); if(!col) return;
+      col.cards=col.cards.filter(function(c){ return c.id!==cardId; });
+      if(this.editId===cardId) this.editId=null;
+      this.sync(); tfPing();
+    },
+    drag(cardId, fromId){ this.dragId=cardId; this.dragFrom=fromId; },
+    drop(toId){
+      this.overCol=null;
+      var id=this.dragId, from=this.dragFrom;
+      this.dragId=null; this.dragFrom=null;
+      if(!id || from===toId) return;
+      var src=this.columns.find(function(c){ return c.id===from; });
+      var dst=this.columns.find(function(c){ return c.id===toId; });
+      if(!src || !dst) return;
+      var i=src.cards.findIndex(function(c){ return c.id===id; });
+      if(i<0) return;
+      dst.cards.push(src.cards.splice(i,1)[0]);
+      this.sync(); tfPing();
+    },
+  };
+}
+
+// --- Navegación entre vistas SIN recargar la página ---
+(function(){
+  var TITLES=${JSON.stringify(Object.fromEntries(VIEWS.map((v) => [v.key, v.title])))};
+  var base='/t/'+encodeURIComponent(TF)+'/app';
+  var panels=document.querySelectorAll('[data-view-panel]');
+  var navs=document.querySelectorAll('.rail .navitem');
+  var titleEl=document.getElementById('tf-title');
+  var mainEl=document.querySelector('.main');
+  function show(v, push){
+    if(!TITLES[v]) v=${JSON.stringify(DEFAULT_VIEW)};
+    panels.forEach(function(p){ p.classList.toggle('active', p.getAttribute('data-view-panel')===v); });
+    navs.forEach(function(n){ n.classList.toggle('active', n.getAttribute('data-view')===v); });
+    if(titleEl) titleEl.textContent=TITLES[v];
+    var url=base+'?v='+v;
+    if(push) history.pushState({v:v},'',url); else history.replaceState({v:v},'',url);
+    if(mainEl) mainEl.scrollTop=0;
+  }
+  navs.forEach(function(n){ n.addEventListener('click', function(){ show(n.getAttribute('data-view'), true); tfPing(); }); });
+  document.querySelectorAll('[data-goto]').forEach(function(b){ b.addEventListener('click', function(){ show(b.getAttribute('data-goto'), true); tfPing(); }); });
+  window.addEventListener('popstate', function(e){
+    var v=(e.state && e.state.v) || new URLSearchParams(location.search).get('v') || ${JSON.stringify(DEFAULT_VIEW)};
+    show(v, false);
+  });
+  show(new URLSearchParams(location.search).get('v') || ${JSON.stringify(DEFAULT_VIEW)}, false);
+})();
 
 // --- Bandeja en vivo: sondea cada 5 s y refresca sin recargar la página ---
 (function(){
   var IB={mail:${JSON.stringify(I.mail)},task:${JSON.stringify(I.task)}};
   var base='/t/'+encodeURIComponent(TF);
-  var rowsEl=document.getElementById('ibrows'), badgeEl=document.getElementById('ibbadge'), toastEl=document.getElementById('tftoast');
-  var seen={}; document.querySelectorAll('#ibrows .mrow').forEach(function(a){seen[a.getAttribute('href')]=1;});
+  var toastEl=document.getElementById('tftoast');
+  var seen={}; document.querySelectorAll('[data-ibrows] .mrow').forEach(function(a){seen[a.getAttribute('href')]=1;});
   function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
   function row(m){
     var href=base+'/d/'+encodeURIComponent(m.deliveryId);
@@ -330,9 +552,17 @@ document.querySelectorAll('.tcard').forEach(function(c){c.addEventListener('clic
       +'<span class="tag">'+(m.kind==='task'?'tarea':'correo')+'</span></span>'
       +'<span class="sj">'+esc(m.subject)+'</span><span class="pv">'+esc(m.preview)+'</span></span></a>';
   }
+  function paint(items){
+    var html=(items && items.length)?items.map(row).join(''):'<div class="empty">No tienes mensajes.</div>';
+    document.querySelectorAll('[data-ibrows]').forEach(function(el){ el.innerHTML=html; });
+  }
+  function badges(n){
+    document.querySelectorAll('[data-ibbadge]').forEach(function(el){ if(n){el.hidden=false;el.textContent=n;}else{el.hidden=true;el.textContent='';} });
+    document.querySelectorAll('[data-ibcount]').forEach(function(el){ el.textContent=n; });
+  }
   function toast(txt){ if(!toastEl)return; toastEl.textContent=txt; toastEl.classList.add('show');
     clearTimeout(toast._t); toast._t=setTimeout(function(){toastEl.classList.remove('show');},7000); }
-  var fails=0;
+  var fails=0, tf_iv;
   function tick(){
     if(document.hidden) return;
     fetch(base+'/inbox.json',{headers:{'Accept':'application/json'}}).then(function(r){
@@ -341,19 +571,59 @@ document.querySelectorAll('.tcard').forEach(function(c){c.addEventListener('clic
       fails=0;
       if(d.done){ clearInterval(tf_iv); return; }
       var fresh=(d.items||[]).filter(function(m){ return !seen[base+'/d/'+encodeURIComponent(m.deliveryId)]; });
-      rowsEl.innerHTML=(d.items&&d.items.length)?d.items.map(row).join(''):'<div class="empty">No tienes mensajes.</div>';
+      paint(d.items);
       (d.items||[]).forEach(function(m){ seen[base+'/d/'+encodeURIComponent(m.deliveryId)]=1; });
-      if(d.unread){ badgeEl.hidden=false; badgeEl.textContent=d.unread; } else { badgeEl.hidden=true; badgeEl.textContent=''; }
+      badges(d.unread||0);
       document.title=(d.unread?'('+d.unread+') ':'')+'TaskFlow';
       if(fresh.length){ toast('Nuevo mensaje de '+fresh[0].from); }
     }).catch(function(){ if(++fails>=5) clearInterval(tf_iv); });
   }
-  var tf_iv=setInterval(tick,5000);
+  tf_iv=setInterval(tick,3000);
   document.addEventListener('visibilitychange',function(){ if(!document.hidden) tick(); });
 })();
-</script>`, { extraCss: `
+</script>`, {
+    head: `<script defer src="/vendor/alpine.min.js"></script>`,
+    extraCss: `
+[x-cloak]{display:none!important}
 .tf-toast{position:fixed;right:18px;bottom:18px;z-index:50;background:var(--ink);color:#fff;border-radius:10px;padding:.7rem .95rem;font-size:.85rem;line-height:1.35;box-shadow:var(--shadow-lg);max-width:320px;opacity:0;transform:translateY(10px);transition:opacity .2s,transform .2s;cursor:pointer;pointer-events:none}
 .tf-toast.show{opacity:1;transform:none;pointer-events:auto}
+.view{display:none}
+.view.active{display:block}
+.columns{min-height:140px}
+.col{transition:background .12s,border-color .12s}
+.col.col-over{background:var(--brand-tint);border-color:var(--brand)}
+.col-add{display:flex;align-items:center;gap:.4rem;width:100%;text-align:left;background:none;border:0;color:var(--muted);font:inherit;font-size:.82rem;font-weight:500;padding:.5rem .35rem;border-radius:8px;cursor:pointer}
+.col-add svg{width:14px;height:14px}
+.col-add:hover{background:var(--line-soft);color:var(--ink-2)}
+.col-empty{font-size:.8rem;color:var(--faint);text-align:center;padding:1rem .6rem;border:1px dashed var(--line);border-radius:9px;margin-bottom:.6rem;line-height:1.4}
+.tcard .foot{align-items:center}
+.tcard-tools{display:flex;gap:.1rem;opacity:0;transition:opacity .12s}
+.tcard:hover .tcard-tools,.tcard:focus-within .tcard-tools{opacity:1}
+.tcard-btn{background:none;border:0;cursor:pointer;color:var(--faint);padding:.2rem;border-radius:5px;display:inline-flex;align-items:center}
+.tcard-btn:hover{background:var(--line-soft);color:var(--warn)}
+.tcard-btn svg{width:14px;height:14px}
+.tcard-edit textarea,.tcard-add textarea{width:100%;border:1px solid var(--line);border-radius:8px;padding:.45rem .55rem;font:inherit;font-size:.88rem;line-height:1.4;resize:vertical;background:#fff;color:var(--ink)}
+.tcard-edit textarea:focus,.tcard-add textarea:focus{outline:2px solid var(--brand-tint);border-color:var(--brand)}
+.tcard.tcard-add{box-shadow:none;border-style:dashed;cursor:default}
+.tcard-actions{display:flex;gap:.4rem;margin-top:.5rem}
+.btn.tiny{padding:.32rem .65rem;font-size:.78rem;border-radius:7px}
+.home-view{max-width:640px}
+.home-cards{display:flex;gap:1rem;flex-wrap:wrap;margin:1.1rem 0 1.4rem}
+.hc{flex:1;min-width:150px;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:1rem 1.15rem;box-shadow:var(--shadow-sm)}
+.hc-n{font-size:1.7rem;font-weight:700;color:var(--brand-strong)}
+.hc-l{font-size:.82rem;color:var(--muted);margin-top:.2rem}
+.home-actions{display:flex;gap:.6rem;flex-wrap:wrap}
+.inbox-full{max-width:720px;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden}
+.inbox-full h3{margin:0;padding:.9rem 1.05rem;font-size:.95rem;font-weight:650;border-bottom:1px solid var(--line)}
+.agenda-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:.7rem;margin-top:1rem}
+.agenda-grid .day{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:.7rem;min-height:130px}
+.agenda-grid .dname{font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin-bottom:.55rem}
+.agenda-grid .ev{background:var(--brand-tint);color:var(--brand-strong);border-radius:6px;padding:.35rem .5rem;font-size:.76rem;margin-bottom:.4rem;line-height:1.3}
+.team-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:.8rem;margin-top:1rem}
+.team-grid .tm{display:flex;align-items:center;gap:.7rem;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:.8rem .9rem}
+.team-grid .nm{font-weight:600;font-size:.9rem}
+.team-grid .rl{font-size:.78rem;color:var(--muted)}
+@media(max-width:720px){.agenda-grid{grid-template-columns:repeat(2,1fr)}}
 ` });
 }
 
@@ -373,12 +643,12 @@ export function renderMessage(token, msg) {
 
   return shell(msg.subject, `
 <div class="app">
-  ${rail("inbox")}
+  ${rail("bandeja", token, false)}
   <div class="main">
     <div class="topbar"><h1>Bandeja</h1><span class="crumb">/ ${escapeHtml(msg.kind === "task" ? "Tarea" : "Mensaje")}</span></div>
     <div class="content">
       <div class="reader">
-        <a class="back" href="/t/${t}/app">${I.back} Volver al tablero</a>
+        <a class="back" href="/t/${t}/app?v=bandeja">${I.back} Volver a la bandeja</a>
         <div class="card">
           <div class="hd">
             <div class="kind">${msg.kind === "task" ? "Tarea asignada" : "Mensaje recibido"}</div>
@@ -527,7 +797,8 @@ export function renderDebrief(html) {
     <p>${html.replace(/\n\n/g, "</p><p>")}</p>
     <p style="margin-top:1.5rem;color:var(--faint);font-size:.9rem">Ya puedes cerrar esta pestaña. Gracias por tu participación.</p>
   </div>
-</div>`);
+</div>
+<script>try{for(var i=localStorage.length-1;i>=0;i--){var k=localStorage.key(i);if(k&&k.indexOf('tf_board_')===0)localStorage.removeItem(k);}}catch(e){}</script>`);
 }
 
 export function renderInvalid(msg) {

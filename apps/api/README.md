@@ -89,6 +89,9 @@ distinta** (para poder compararlas).
 Al terminar la sesión: "Marcar finalizada" (habilita la encuesta para quien no
 pulsó "Finalizar piloto"). Para repetir pruebas: "Reiniciar campaña".
 
+**Sesión con varios PC en red local** (1 admin + N participantes): ver
+[`LABORATORIO.md`](../../LABORATORIO.md) en la raíz del repo.
+
 ## 5. Recorrido del participante
 
 `/t/<token>` → consentimiento ("piloto de usabilidad") → TaskFlow (tablero +
@@ -98,6 +101,12 @@ diálogo de permiso) → "Finalizar piloto" → **encuesta adaptada al vector** 
 
 El tablero **sondea la bandeja cada 5 s**: cuando el admin envía un mensaje
 aparece solo (con un aviso emergente), sin que el participante recargue.
+
+La app señuelo usa **Alpine.js** (por CDN, sin build). El sidebar cambia de
+vista sin recargar (`?v=`) y el **kanban es editable**: el participante crea,
+edita, borra y arrastra tarjetas. Esas tarjetas viven **solo en su navegador**
+(`localStorage`, clave `tf_board_<token>`); nunca llegan al servidor y se borran
+en el debriefing — coherente con la nota de privacidad de `db/schema.sql`.
 
 ## 6. Endpoints
 
