@@ -68,20 +68,26 @@ TRUNCATE participants, templates, campaigns, campaign_templates,
          participant_campaign, events, post_session_survey CASCADE;
 ```
 
-## 4. Flujo operativo (desde `/admin.html`)
+## 4. Flujo operativo (desde `/admin.html`, pasos 1 → 5)
 
-1. **Plantillas** → "Crear las 5 plantillas por defecto" (o crea las tuyas:
-   remitente, asunto, cuerpo HTML, CTA, y aterrizaje `form` o `permiso`).
-2. **Participantes** → importar por CSV (`external_hash,role,team_label,...`)
-   o JSON. El hash se genera **fuera** de este sistema.
-3. **Campañas** → "Nueva campaña": nombre, semilla (opcional) y las plantillas
-   que entran en el sorteo.
-4. Abrir la campaña → **"Generar enlaces"** (asigna el vector por semilla) →
-   copiar/descargar los `/t/<token>` y entregarlos a los participantes.
-5. Cuando empiece la sesión → **"Entregar estímulo a todos"** (aparece en la
-   bandeja; el tiempo de reacción se mide desde aquí).
-6. Al terminar → marcar la campaña **`finalizada`** (habilita la encuesta para
-   quien no pulsó "Finalizar piloto") y revisar el **dashboard** / exportar CSV.
+El panel está guiado. En esta prueba **cada equipo recibe una técnica de ataque
+distinta** (para poder compararlas).
+
+1. **Participantes** → pegar el CSV `external_hash,role,team_label`. El hash se
+   genera **fuera** de este sistema; nunca subas nombres/correos.
+2. **Campaña y enlaces** → crear la campaña (solo un nombre) → "Generar enlaces
+   para todos" → copiar/descargar los `/t/<token>` y entregarlos. El panel
+   **"Verificación previa"** muestra en verde/rojo qué falta antes de la sesión.
+3. **Plantillas** → "Crear biblioteca estándar" (15 ataques = 3 por técnica + 6
+   de relleno). Puedes editar textos o "Restaurar textos estándar".
+4. **Mensajes** → elegir una plantilla → "Guardar el mensaje" → en la tabla,
+   **"enviar"** y marcar el equipo. Envía **una técnica por equipo** (avisa si
+   repites). Los mensajes de relleno sí pueden ir a todos.
+5. **Resultados** → resumen rápido; el detalle está en el **dashboard**
+   (`/index.html`), que se actualiza solo.
+
+Al terminar la sesión: "Marcar finalizada" (habilita la encuesta para quien no
+pulsó "Finalizar piloto"). Para repetir pruebas: "Reiniciar campaña".
 
 ## 5. Recorrido del participante
 
@@ -90,6 +96,9 @@ bandeja) → abre el mensaje-estímulo → pulsa el CTA → aterrizaje (formular
 diálogo de permiso) → "Finalizar piloto" → **encuesta adaptada al vector** →
 **debriefing**.
 
+El tablero **sondea la bandeja cada 5 s**: cuando el admin envía un mensaje
+aparece solo (con un aviso emergente), sin que el participante recargue.
+
 ## 6. Endpoints
 
 Administración (`x-api-key: <ADMIN_API_KEY>`):
@@ -97,16 +106,17 @@ Administración (`x-api-key: <ADMIN_API_KEY>`):
 | Método | Ruta | Qué hace |
 |---|---|---|
 | POST/GET/PUT/DELETE | `/api/templates[/:id]` | CRUD de plantillas |
-| POST | `/api/templates/seed-defaults` | Crea las 5 plantillas estándar |
+| POST | `/api/templates/seed-defaults` | Crea la biblioteca estándar (15 ataque + 6 relleno); `{replace:true}` reescribe las estándar |
 | POST/GET | `/api/campaigns` | Crear / listar campañas (con `template_ids` = pool) |
 | GET/PUT | `/api/campaigns/:id` | Detalle (pool + distribución asignada) / editar |
 | POST | `/api/campaigns/:id/generate-tokens` | Genera enlaces y **asigna el vector por semilla** |
-| POST | `/api/campaigns/:id/deliver` | Entrega el estímulo (fija `delivered_at` + evento `entregado`) |
+| GET | `/api/campaigns/:id/coverage` | Qué técnica de ataque / relleno recibió cada equipo (verificación previa) |
 | PATCH | `/api/campaigns/:id/status` | Cambiar estado |
 | GET | `/api/campaigns/:id/links` | Enlaces + vector asignado por participante |
 | POST | `/api/participants/import` \| `/import-csv` | Importar participantes |
 | GET | `/api/participants` | Listar (hash seudónimo, nunca identidad) |
-| GET | `/api/dashboard/overview` \| `/by-team` \| `/by-role-vector` \| `/fall-reasons` | Métricas agregadas |
+| GET | `/api/dashboard/overview` | Todo el dashboard: `totales`, `embudo`, `por_tecnica`, `por_rol`, `por_equipo`, `motivos_de_caida`, `percepcion` |
+| GET | `/api/dashboard/by-team` \| `/by-role-vector` \| `/fall-reasons` | Vistas agregadas sueltas |
 | GET | `/api/export/by-team.{csv,json}` \| `/by-role-vector.{csv,json}` | Export para la tesis |
 
 Participante (públicas, solo con el token del enlace):
@@ -116,6 +126,7 @@ Participante (públicas, solo con el token del enlace):
 | GET | `/t/:token` | Enruta según consentimiento / estado |
 | POST | `/t/:token/consent` | Acepta el consentimiento |
 | GET | `/t/:token/app` | App señuelo TaskFlow |
+| GET | `/t/:token/inbox.json` | Bandeja en JSON (sondeo en vivo del tablero) |
 | GET | `/t/:token/message/:mid` | Ver un mensaje (abrir el estímulo = evento `abierto`) |
 | GET | `/t/:token/stimulus` | Pulsar el CTA = evento `clic` + aterrizaje |
 | POST | `/t/:token/submit` | `intento_envio` (descarta el body **siempre**) |

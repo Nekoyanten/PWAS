@@ -282,6 +282,7 @@ export function renderApp(token, { inbox }) {
 
   return shell("TaskFlow", `
 <div class="app">
+  <div class="tf-toast" id="tftoast" onclick="this.classList.remove('show')"></div>
   ${rail("board")}
   <div class="main">
     <div class="topbar">
@@ -299,8 +300,8 @@ export function renderApp(token, { inbox }) {
           <div class="columns">${board}</div>
         </div>
         <aside class="inbox" id="inbox">
-          <h3>${I.inbox}<span>Bandeja</span>${unread ? `<span class="ib-badge">${unread}</span>` : ""}</h3>
-          ${rows || '<div class="empty">No tienes mensajes.</div>'}
+          <h3>${I.inbox}<span>Bandeja</span><span class="ib-badge" id="ibbadge"${unread ? "" : " hidden"}>${unread || ""}</span></h3>
+          <div id="ibrows">${rows || '<div class="empty">No tienes mensajes.</div>'}</div>
         </aside>
       </div>
     </div>
@@ -313,7 +314,47 @@ var _d=null;
 function tfDrag(e){_d=e.currentTarget;e.dataTransfer.effectAllowed='move'}
 function tfDrop(e){e.preventDefault();if(_d){e.currentTarget.appendChild(_d);_d=null;tfPing()}}
 document.querySelectorAll('.tcard').forEach(function(c){c.addEventListener('click',tfPing)});
-</script>`);
+
+// --- Bandeja en vivo: sondea cada 5 s y refresca sin recargar la página ---
+(function(){
+  var IB={mail:${JSON.stringify(I.mail)},task:${JSON.stringify(I.task)}};
+  var base='/t/'+encodeURIComponent(TF);
+  var rowsEl=document.getElementById('ibrows'), badgeEl=document.getElementById('ibbadge'), toastEl=document.getElementById('tftoast');
+  var seen={}; document.querySelectorAll('#ibrows .mrow').forEach(function(a){seen[a.getAttribute('href')]=1;});
+  function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+  function row(m){
+    var href=base+'/d/'+encodeURIComponent(m.deliveryId);
+    return '<a class="mrow msg '+(m.unread?'unread':'')+'" href="'+href+'">'
+      +'<span class="ic">'+(m.kind==='task'?IB.task:IB.mail)+'</span>'
+      +'<span class="bd"><span class="l1"><span class="from">'+esc(m.from)+'</span>'
+      +'<span class="tag">'+(m.kind==='task'?'tarea':'correo')+'</span></span>'
+      +'<span class="sj">'+esc(m.subject)+'</span><span class="pv">'+esc(m.preview)+'</span></span></a>';
+  }
+  function toast(txt){ if(!toastEl)return; toastEl.textContent=txt; toastEl.classList.add('show');
+    clearTimeout(toast._t); toast._t=setTimeout(function(){toastEl.classList.remove('show');},7000); }
+  var fails=0;
+  function tick(){
+    if(document.hidden) return;
+    fetch(base+'/inbox.json',{headers:{'Accept':'application/json'}}).then(function(r){
+      if(!r.ok) throw 0; return r.json();
+    }).then(function(d){
+      fails=0;
+      if(d.done){ clearInterval(tf_iv); return; }
+      var fresh=(d.items||[]).filter(function(m){ return !seen[base+'/d/'+encodeURIComponent(m.deliveryId)]; });
+      rowsEl.innerHTML=(d.items&&d.items.length)?d.items.map(row).join(''):'<div class="empty">No tienes mensajes.</div>';
+      (d.items||[]).forEach(function(m){ seen[base+'/d/'+encodeURIComponent(m.deliveryId)]=1; });
+      if(d.unread){ badgeEl.hidden=false; badgeEl.textContent=d.unread; } else { badgeEl.hidden=true; badgeEl.textContent=''; }
+      document.title=(d.unread?'('+d.unread+') ':'')+'TaskFlow';
+      if(fresh.length){ toast('Nuevo mensaje de '+fresh[0].from); }
+    }).catch(function(){ if(++fails>=5) clearInterval(tf_iv); });
+  }
+  var tf_iv=setInterval(tick,5000);
+  document.addEventListener('visibilitychange',function(){ if(!document.hidden) tick(); });
+})();
+</script>`, { extraCss: `
+.tf-toast{position:fixed;right:18px;bottom:18px;z-index:50;background:var(--ink);color:#fff;border-radius:10px;padding:.7rem .95rem;font-size:.85rem;line-height:1.35;box-shadow:var(--shadow-lg);max-width:320px;opacity:0;transform:translateY(10px);transition:opacity .2s,transform .2s;cursor:pointer;pointer-events:none}
+.tf-toast.show{opacity:1;transform:none;pointer-events:auto}
+` });
 }
 
 export function renderMessage(token, msg) {

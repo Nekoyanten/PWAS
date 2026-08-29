@@ -119,6 +119,46 @@ campaignsRouter.get("/:id/teams", requireAdmin, async (req, res) => {
   res.json({ teams: r.rows });
 });
 
+// Qué se ha enviado a cada equipo de la campaña: técnicas de ataque (vector) y
+// número de mensajes benignos. Alimenta la "verificación previa" del panel y el
+// aviso de "una técnica por equipo".
+campaignsRouter.get("/:id/coverage", requireAdmin, async (req, res) => {
+  const teams = await query(
+    `SELECT COALESCE(p.team_label, '(sin equipo)') AS team_label,
+            COUNT(DISTINCT pc.id) AS participantes
+     FROM participant_campaign pc JOIN participants p ON p.id = pc.participant_id
+     WHERE pc.campaign_id = $1
+     GROUP BY p.team_label ORDER BY p.team_label`,
+    [req.params.id]
+  );
+  const sent = await query(
+    `SELECT COALESCE(p.team_label, '(sin equipo)') AS team_label,
+            m.id AS message_id, m.subject, m.is_attack, m.vector,
+            COUNT(DISTINCT d.id) AS enviados
+     FROM deliveries d
+     JOIN messages m ON m.id = d.message_id
+     JOIN participant_campaign pc ON pc.id = d.participant_campaign_id
+     JOIN participants p ON p.id = pc.participant_id
+     WHERE m.campaign_id = $1
+     GROUP BY p.team_label, m.id, m.subject, m.is_attack, m.vector
+     ORDER BY p.team_label`,
+    [req.params.id]
+  );
+  const byTeam = new Map(
+    teams.rows.map((t) => [t.team_label, {
+      team_label: t.team_label, participantes: Number(t.participantes),
+      ataques: [], benignos: 0,
+    }])
+  );
+  for (const r of sent.rows) {
+    const entry = byTeam.get(r.team_label) || { team_label: r.team_label, participantes: 0, ataques: [], benignos: 0 };
+    if (r.is_attack) entry.ataques.push({ vector: r.vector, message_id: r.message_id, subject: r.subject, enviados: Number(r.enviados) });
+    else entry.benignos += Number(r.enviados);
+    byTeam.set(r.team_label, entry);
+  }
+  res.json({ teams: [...byTeam.values()] });
+});
+
 // Sugerencia reproducible de qué vector asignar a cada equipo (balanceado por
 // la semilla de la campaña). El admin decide si la sigue.
 campaignsRouter.get("/:id/plan", requireAdmin, async (req, res) => {

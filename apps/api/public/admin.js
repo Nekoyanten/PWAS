@@ -4,6 +4,12 @@ const statusEl = $("#status");
 let KEY = sessionStorage.getItem("paws_admin_key") || "";
 if (KEY) $("#apiKey").value = KEY;
 
+const VEC_LABEL = { autoridad: "autoridad", urgencia: "urgencia", escasez: "escasez", prueba_social: "prueba social", curiosidad: "curiosidad" };
+const badge = (v, atk) => atk === false
+  ? `<span class="badge benigno">relleno</span>`
+  : `<span class="badge ${v}">${VEC_LABEL[v] || v}</span>`;
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
 async function api(method, path, body, isText) {
   const headers = { "x-api-key": KEY };
   let payload;
@@ -16,7 +22,6 @@ async function api(method, path, body, isText) {
   if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
   return data;
 }
-const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
 $("#connectBtn").addEventListener("click", async () => {
   KEY = $("#apiKey").value.trim();
@@ -25,16 +30,193 @@ $("#connectBtn").addEventListener("click", async () => {
   catch (e) { statusEl.textContent = "Error: " + e.message; }
 });
 
-$$(".tabs button").forEach((b) => b.addEventListener("click", () => {
-  $$(".tabs button").forEach((x) => x.classList.remove("active"));
+$$(".steps button").forEach((b) => b.addEventListener("click", () => {
+  $$(".steps button").forEach((x) => x.classList.remove("active"));
   b.classList.add("active");
   $$(".tabpane").forEach((p) => (p.hidden = true));
   $("#tab-" + b.dataset.tab).hidden = false;
+  if (b.dataset.tab === "res") loadResults();
 }));
+function markDone(tab, done) {
+  const b = $(`.steps button[data-tab="${tab}"]`);
+  if (b) b.classList.toggle("done", !!done);
+}
 
-function refreshAll() { loadTemplates(); loadCampaigns(); loadParticipants(); loadMsgCampaigns(); }
+function refreshAll() {
+  loadParticipants();
+  loadTemplates();
+  loadCampaigns();
+}
 
-/* ================= PLANTILLAS ================= */
+/* ================= CAMPAÑA ACTIVA (selector global) ================= */
+let CAMPAIGNS = [], CURRENT_CAMP = null, LINKS = [];
+
+$("#campSel").addEventListener("change", () => {
+  CURRENT_CAMP = $("#campSel").value || null;
+  sessionStorage.setItem("paws_camp", CURRENT_CAMP || "");
+  onCampaignChange();
+});
+
+async function loadCampaigns() {
+  const { campaigns } = await api("GET", "/api/campaigns");
+  CAMPAIGNS = campaigns;
+  const saved = CURRENT_CAMP || sessionStorage.getItem("paws_camp") || "";
+  $("#campSel").innerHTML = '<option value="">—</option>' +
+    campaigns.map((c) => `<option value="${c.id}">${esc(c.name)} · ${esc(c.status)}</option>`).join("");
+  CURRENT_CAMP = campaigns.find((c) => c.id === saved) ? saved : (campaigns[0]?.id || null);
+  $("#campSel").value = CURRENT_CAMP || "";
+  onCampaignChange();
+}
+
+function currentCampaign() { return CAMPAIGNS.find((c) => c.id === CURRENT_CAMP) || null; }
+
+function onCampaignChange() {
+  const c = currentCampaign();
+  $("#msgNoCamp").hidden = !!c;
+  markDone("part", true); // si conectó, asumimos que ya importó o lo hará
+  if (!c) {
+    $("#campDetailPanel").hidden = true;
+    $("#msgTable tbody").innerHTML = "";
+    return;
+  }
+  $("#campDetailPanel").hidden = false;
+  $("#campDetailName").textContent = c.name;
+  $("#campStatusBadge").textContent = c.status;
+  loadLinks();
+  loadPreflight();
+  loadMessages();
+  markDone("camp", Number(c.links) > 0);
+}
+
+/* ================= 1 · PARTICIPANTES ================= */
+async function loadParticipants() {
+  const { participants } = await api("GET", "/api/participants");
+  $("#partCount").textContent = participants.length;
+  $("#partTable tbody").innerHTML = participants.map((p) => `<tr>
+    <td><code>${esc(p.external_hash)}</code></td><td>${esc(p.role)}</td>
+    <td>${esc(p.team_label || "—")}</td><td>${p.consent_given ? "sí" : "no"}</td></tr>`).join("");
+  markDone("part", participants.length > 0);
+}
+$("#importCsvBtn").addEventListener("click", async () => {
+  try { const r = await api("POST", "/api/participants/import-csv", $("#csvBox").value, true);
+    $("#importMsg").textContent = `Importados ${r.imported}${r.failed ? `, ${r.failed} con error` : ""}.`;
+    loadParticipants(); }
+  catch (e) { $("#importMsg").textContent = "Error: " + e.message; }
+});
+$("#importJsonBtn").addEventListener("click", async () => {
+  try { const r = await api("POST", "/api/participants/import", JSON.parse($("#jsonBox").value));
+    $("#importMsg").textContent = `Importados ${r.imported}, con error ${r.failed}.`; loadParticipants(); }
+  catch (e) { $("#importMsg").textContent = "Error: " + e.message; }
+});
+
+/* ================= 2 · CAMPAÑA Y ENLACES ================= */
+$("#campForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  try {
+    const r = await api("POST", "/api/campaigns", { name: e.target.name.value });
+    e.target.reset();
+    CURRENT_CAMP = r.campaign.id;
+    sessionStorage.setItem("paws_camp", CURRENT_CAMP);
+    await loadCampaigns();
+    statusEl.textContent = "Campaña creada ✓";
+  } catch (err) { alert(err.message); }
+});
+
+async function loadLinks() {
+  const { links } = await api("GET", `/api/campaigns/${CURRENT_CAMP}/links`);
+  LINKS = links;
+  $("#linksTable tbody").innerHTML = links.map((l) => `<tr>
+    <td><code>${esc(l.external_hash)}</code></td><td>${esc(l.role)}</td><td>${esc(l.team_label || "—")}</td>
+    <td>${l.mensajes}</td><td>${l.encuesta ? "sí" : "no"}</td>
+    <td><a href="${l.url}" target="_blank">${location.origin}${l.url}</a></td>
+    <td><button class="btn-xs ghost" data-reset="${l.id}">reiniciar</button></td>
+  </tr>`).join("") || `<tr><td colspan="7" class="hint">Aún no hay enlaces. Pulsa "Generar enlaces para todos".</td></tr>`;
+  $$("#linksTable [data-reset]").forEach((b) => b.onclick = async () => {
+    if (confirm("¿Reiniciar este participante? Borra sus eventos y su encuesta.")) {
+      try { await api("POST", `/api/campaigns/${CURRENT_CAMP}/participants/${b.dataset.reset}/reset`); loadLinks(); loadPreflight(); }
+      catch (e) { alert(e.message); }
+    }
+  });
+}
+
+async function loadPreflight() {
+  const el = $("#preflight");
+  const verdictEl = $("#preflightVerdict");
+  const c = currentCampaign();
+  if (!c) { el.innerHTML = '<li><span class="mark">·</span> Elige una campaña.</li>'; verdictEl.innerHTML = ""; return; }
+
+  const [{ participants }, { links }, { teams }] = await Promise.all([
+    api("GET", "/api/participants"),
+    api("GET", `/api/campaigns/${c.id}/links`),
+    api("GET", `/api/campaigns/${c.id}/coverage`),
+  ]);
+
+  const items = [];
+  // 1) participantes importados
+  items.push(participants.length > 0
+    ? { s: "ok", t: `Hay ${participants.length} participantes cargados.` }
+    : { s: "no", t: "No hay participantes. Ve al paso 1." });
+  // 2) enlaces para todos
+  if (links.length === 0) items.push({ s: "no", t: "Nadie tiene enlace todavía. Pulsa \"Generar enlaces para todos\"." });
+  else if (links.length < participants.length) items.push({ s: "warn", t: `${links.length} de ${participants.length} participantes tienen enlace. Genera los que faltan.` });
+  else items.push({ s: "ok", t: `Los ${links.length} participantes tienen enlace.` });
+  // 3) una técnica de ataque por equipo
+  const attackTeams = teams.filter((tm) => tm.participantes > 0 || tm.ataques.length);
+  if (attackTeams.length === 0) {
+    items.push({ s: "no", t: "Ningún equipo tiene enlaces. Genera los enlaces primero." });
+  } else {
+    const sinAtaque = attackTeams.filter((tm) => tm.ataques.length === 0).map((tm) => tm.team_label);
+    const conVarias = attackTeams.filter((tm) => new Set(tm.ataques.map((a) => a.vector)).size > 1).map((tm) => tm.team_label);
+    if (sinAtaque.length) items.push({ s: "no", t: `Falta enviar el ataque a: ${sinAtaque.join(", ")} (paso 4).` });
+    if (conVarias.length) items.push({ s: "warn", t: `Estos equipos recibieron más de una técnica y mezclan datos: ${conVarias.join(", ")}.` });
+    if (!sinAtaque.length && !conVarias.length) {
+      const resumen = attackTeams.map((tm) => `${tm.team_label} → ${VEC_LABEL[tm.ataques[0].vector] || tm.ataques[0].vector}`).join(" · ");
+      items.push({ s: "ok", t: `Cada equipo tiene una técnica: ${resumen}.` });
+    }
+  }
+  // 4) campaña en curso
+  items.push(c.status === "en_curso"
+    ? { s: "ok", t: "La campaña está \"en curso\"." }
+    : { s: "warn", t: `La campaña está en "${c.status}". Márcala "en curso" al empezar la sesión.` });
+
+  el.innerHTML = items.map((i) => `<li class="${i.s}"><span class="mark">${i.s === "ok" ? "✓" : i.s === "warn" ? "!" : "✕"}</span><span>${esc(i.t)}</span></li>`).join("");
+  const bad = items.some((i) => i.s === "no");
+  const warn = items.some((i) => i.s === "warn");
+  verdictEl.innerHTML = bad
+    ? `<div class="readout warn">Todavía faltan pasos antes de la sesión (mira las ✕ de arriba).</div>`
+    : warn
+    ? `<div class="readout warn">Casi listo. Revisa los avisos (!) — puedes continuar si son intencionados.</div>`
+    : `<div class="readout ok">✓ Listo para la sesión. Reparte los enlaces y, cuando empiecen, envía cada ataque.</div>`;
+}
+
+$("#genTokensBtn").addEventListener("click", async () => {
+  try { const r = await api("POST", `/api/campaigns/${CURRENT_CAMP}/generate-tokens`, {});
+    statusEl.textContent = `${r.generated} enlaces nuevos ✓`; await loadCampaigns(); }
+  catch (e) { alert(e.message); }
+});
+async function setStatus(status) {
+  try { await api("PATCH", `/api/campaigns/${CURRENT_CAMP}/status`, { status }); await loadCampaigns(); statusEl.textContent = `Campaña: ${status} ✓`; }
+  catch (e) { alert(e.message); }
+}
+$("#startCampBtn").addEventListener("click", () => setStatus("en_curso"));
+$("#finishCampBtn").addEventListener("click", () => { if (confirm("¿Marcar la campaña como finalizada? Habilita la encuesta para quien no pulsó \"Finalizar\".")) setStatus("finalizada"); });
+$("#resetCampBtn").addEventListener("click", async () => {
+  if (!confirm("¿Reiniciar TODA la campaña? Borra eventos, envíos y encuestas de todos. Conserva participantes y mensajes.")) return;
+  try { const r = await api("POST", `/api/campaigns/${CURRENT_CAMP}/reset`); statusEl.textContent = `Reiniciados ${r.reset} ✓`; onCampaignChange(); }
+  catch (e) { alert(e.message); }
+});
+$("#copyLinksBtn").addEventListener("click", () => {
+  navigator.clipboard.writeText(LINKS.map((l) => `${l.external_hash}\t${location.origin}${l.url}`).join("\n"))
+    .then(() => statusEl.textContent = "Enlaces copiados ✓");
+});
+$("#downloadLinksBtn").addEventListener("click", () => {
+  const rows = [["external_hash", "role", "team_label", "url"]].concat(LINKS.map((l) => [l.external_hash, l.role, l.team_label || "", location.origin + l.url]));
+  const csv = rows.map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" })); a.download = "enlaces.csv"; a.click();
+});
+
+/* ================= 3 · PLANTILLAS ================= */
 let TEMPLATES = [];
 function toggleAttackFields() {
   const atk = $("#isAttack").value === "true";
@@ -48,22 +230,32 @@ $("#landingKind").addEventListener("change", toggleAttackFields);
 async function loadTemplates() {
   const { templates } = await api("GET", "/api/templates");
   TEMPLATES = templates;
-  $("#tplTable tbody").innerHTML = templates.map((t) => `<tr>
-    <td>${esc(t.name)}</td><td>${t.kind === "task" ? "tarea" : "correo"}</td>
-    <td>${t.is_attack ? "sí" : "no"}</td><td>${t.is_attack ? esc(t.vector) : "—"}</td>
-    <td>${t.is_attack ? esc(t.landing_kind) : "—"}</td>
+  const atk = templates.filter((t) => t.is_attack);
+  const ben = templates.filter((t) => !t.is_attack);
+  $("#tplAtkTable tbody").innerHTML = atk.map((t) => `<tr>
+    <td>${esc(t.name)}</td><td>${badge(t.vector, true)}</td>
+    <td>${t.kind === "task" ? "tarea" : "correo"}</td><td>${esc(t.landing_kind)}</td>
     <td><button class="btn-xs" data-edit="${t.id}">editar</button> <button class="btn-xs ghost" data-del="${t.id}">borrar</button></td>
-  </tr>`).join("");
-  $$("#tplTable [data-edit]").forEach((b) => b.onclick = () => editTemplate(b.dataset.edit));
-  $$("#tplTable [data-del]").forEach((b) => b.onclick = async () => {
+  </tr>`).join("") || `<tr><td colspan="5" class="hint">Sin plantillas de ataque. Pulsa "Crear biblioteca estándar".</td></tr>`;
+  $("#tplBenTable tbody").innerHTML = ben.map((t) => `<tr>
+    <td>${esc(t.name)}</td><td>${t.kind === "task" ? "tarea" : "correo"}</td><td>${esc(t.sender_label || "—")}</td>
+    <td><button class="btn-xs" data-edit="${t.id}">editar</button> <button class="btn-xs ghost" data-del="${t.id}">borrar</button></td>
+  </tr>`).join("") || `<tr><td colspan="4" class="hint">Sin plantillas de relleno.</td></tr>`;
+  $$("#tab-tpl [data-edit]").forEach((b) => b.onclick = () => editTemplate(b.dataset.edit));
+  $$("#tab-tpl [data-del]").forEach((b) => b.onclick = async () => {
     if (confirm("¿Borrar plantilla?")) { try { await api("DELETE", "/api/templates/" + b.dataset.del); loadTemplates(); } catch (e) { alert(e.message); } }
   });
-  renderCampTplChecks();
+  markDone("tpl", atk.length > 0);
   fillMsgTemplateSelect();
 }
 
 $("#seedDefaultsBtn").addEventListener("click", async () => {
-  try { await api("POST", "/api/templates/seed-defaults"); loadTemplates(); statusEl.textContent = "Juego estándar creado ✓"; }
+  try { const r = await api("POST", "/api/templates/seed-defaults", {}); loadTemplates(); statusEl.textContent = `Biblioteca lista (${r.total}) ✓`; }
+  catch (e) { alert(e.message); }
+});
+$("#seedReplaceBtn").addEventListener("click", async () => {
+  if (!confirm("¿Restaurar los textos estándar? Sobrescribe las plantillas con el mismo nombre; no toca las tuyas.")) return;
+  try { const r = await api("POST", "/api/templates/seed-defaults", { replace: true }); loadTemplates(); statusEl.textContent = `Textos restaurados (${r.total}) ✓`; }
   catch (e) { alert(e.message); }
 });
 
@@ -78,7 +270,7 @@ function editTemplate(id) {
   f.landing_titulo.value = t.landing_config?.titulo || ""; f.landing_detalle.value = t.landing_config?.detalle || "";
   toggleAttackFields();
   $("#tplFormTitle").textContent = "Editar plantilla"; $("#tplCancel").style.display = "";
-  window.scrollTo(0, document.body.scrollHeight);
+  $("#tplForm").scrollIntoView({ behavior: "smooth" });
 }
 $("#tplCancel").addEventListener("click", resetTplForm);
 function resetTplForm() {
@@ -109,94 +301,12 @@ $("#tplForm").addEventListener("submit", async (e) => {
   } catch (err) { alert(err.message); }
 });
 
-/* ================= CAMPAÑAS ================= */
-let CAMPAIGNS = [], CURRENT_CAMP = null, LINKS = [];
-function renderCampTplChecks() {
-  $("#campTplChecks").innerHTML = TEMPLATES.map((t) =>
-    `<label class="chk"><input type="checkbox" value="${t.id}"> ${esc(t.name)} <em>(${t.is_attack ? esc(t.vector) : "benigno"})</em></label>`
-  ).join("") || '<span class="hint">Crea plantillas primero.</span>';
-}
-async function loadCampaigns() {
-  const { campaigns } = await api("GET", "/api/campaigns");
-  CAMPAIGNS = campaigns;
-  $("#campTable tbody").innerHTML = campaigns.map((c) => `<tr>
-    <td>${esc(c.name)}</td><td>${esc(c.status)}</td><td><code>${esc(c.seed)}</code></td>
-    <td>${c.links}</td><td>${c.messages}</td><td>${c.deliveries}</td>
-    <td><button class="btn-xs" data-camp="${c.id}">abrir</button></td>
-  </tr>`).join("");
-  $$("#campTable [data-camp]").forEach((b) => b.onclick = () => openCampaign(b.dataset.camp));
-  loadMsgCampaigns();
-}
-$("#campForm").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const template_ids = $$("#campTplChecks input:checked").map((i) => i.value);
-  try {
-    await api("POST", "/api/campaigns", { name: e.target.name.value, seed: e.target.seed.value || undefined, template_ids });
-    e.target.reset(); loadCampaigns(); statusEl.textContent = "Campaña creada ✓";
-  } catch (err) { alert(err.message); }
-});
-async function openCampaign(id) {
-  CURRENT_CAMP = id;
-  const { campaign } = await api("GET", "/api/campaigns/" + id);
-  const { teams } = await api("GET", `/api/campaigns/${id}/teams`);
-  $("#campDetailPanel").hidden = false;
-  $("#campDetailName").textContent = campaign.name;
-  $("#campStatusSel").value = campaign.status;
-  $("#campTeams").textContent = teams.map((t) => `${t.team_label} (${t.participantes})`).join(", ") || "sin participantes con enlace";
-  loadLinks(id);
-  $("#campDetailPanel").scrollIntoView({ behavior: "smooth" });
-}
-async function loadLinks(id) {
-  const { links } = await api("GET", `/api/campaigns/${id}/links`);
-  LINKS = links;
-  $("#linksTable tbody").innerHTML = links.map((l) => `<tr>
-    <td>${esc(l.external_hash)}</td><td>${esc(l.role)}</td><td>${esc(l.team_label || "—")}</td>
-    <td>${l.mensajes}</td><td>${l.encuesta ? "sí" : "no"}</td>
-    <td><a href="${l.url}" target="_blank">${location.origin}${l.url}</a></td>
-    <td><button class="btn-xs ghost" data-reset="${l.id}">reiniciar</button></td>
-  </tr>`).join("");
-  $$("#linksTable [data-reset]").forEach((b) => b.onclick = async () => {
-    if (confirm("¿Reiniciar este participante? Borra sus eventos y encuesta.")) {
-      try { await api("POST", `/api/campaigns/${CURRENT_CAMP}/participants/${b.dataset.reset}/reset`); loadLinks(CURRENT_CAMP); }
-      catch (e) { alert(e.message); }
-    }
-  });
-}
-$("#genTokensBtn").addEventListener("click", async () => {
-  try { const r = await api("POST", `/api/campaigns/${CURRENT_CAMP}/generate-tokens`, {}); statusEl.textContent = `${r.generated} enlaces ✓`; openCampaign(CURRENT_CAMP); loadCampaigns(); }
-  catch (e) { alert(e.message); }
-});
-$("#setStatusBtn").addEventListener("click", async () => {
-  try { await api("PATCH", `/api/campaigns/${CURRENT_CAMP}/status`, { status: $("#campStatusSel").value }); statusEl.textContent = "Estado actualizado ✓"; loadCampaigns(); }
-  catch (e) { alert(e.message); }
-});
-$("#resetCampBtn").addEventListener("click", async () => {
-  if (!confirm("¿Reiniciar TODA la campaña? Borra eventos, envíos y encuestas de todos (conserva participantes y mensajes).")) return;
-  try { const r = await api("POST", `/api/campaigns/${CURRENT_CAMP}/reset`); statusEl.textContent = `Reiniciados ${r.reset} ✓`; openCampaign(CURRENT_CAMP); }
-  catch (e) { alert(e.message); }
-});
-$("#copyLinksBtn").addEventListener("click", () => {
-  navigator.clipboard.writeText(LINKS.map((l) => `${l.external_hash}\t${location.origin}${l.url}`).join("\n"))
-    .then(() => statusEl.textContent = "Enlaces copiados ✓");
-});
-$("#downloadLinksBtn").addEventListener("click", () => {
-  const rows = [["external_hash", "role", "team_label", "url"]].concat(LINKS.map((l) => [l.external_hash, l.role, l.team_label || "", location.origin + l.url]));
-  const csv = rows.map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" })); a.download = "enlaces.csv"; a.click();
-});
-
-/* ================= MENSAJES ================= */
-let MSG_CAMP = null, CURRENT_MSG = null;
+/* ================= 4 · MENSAJES ================= */
+let CURRENT_MSG = null;
 function fillMsgTemplateSelect() {
   $("#msgTpl").innerHTML = '<option value="">— redactar desde cero —</option>' +
-    TEMPLATES.map((t) => `<option value="${t.id}">${esc(t.name)}${t.is_attack ? ` (${esc(t.vector)})` : " (benigno)"}</option>`).join("");
+    TEMPLATES.map((t) => `<option value="${t.id}">${t.is_attack ? "[ataque " + (VEC_LABEL[t.vector] || t.vector) + "] " : "[relleno] "}${esc(t.name)}</option>`).join("");
 }
-function loadMsgCampaigns() {
-  $("#msgCampSel").innerHTML = CAMPAIGNS.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join("");
-  if (CAMPAIGNS[0]) { MSG_CAMP = $("#msgCampSel").value = MSG_CAMP && CAMPAIGNS.find((c) => c.id === MSG_CAMP) ? MSG_CAMP : CAMPAIGNS[0].id; loadMessages(); }
-}
-$("#msgCampSel").addEventListener("change", (e) => { MSG_CAMP = e.target.value; loadMessages(); });
 function toggleMsgAttack() { $$("#msgForm .msgatk").forEach((e) => (e.style.display = $("#msgIsAttack").value === "true" ? "" : "none")); }
 $("#msgIsAttack").addEventListener("change", toggleMsgAttack);
 $("#msgTpl").addEventListener("change", (e) => {
@@ -212,23 +322,24 @@ $("#msgTpl").addEventListener("change", (e) => {
 });
 
 async function loadMessages() {
-  if (!MSG_CAMP) return;
-  const { messages } = await api("GET", `/api/campaigns/${MSG_CAMP}/messages`);
+  if (!CURRENT_CAMP) { $("#msgTable tbody").innerHTML = ""; return; }
+  const { messages } = await api("GET", `/api/campaigns/${CURRENT_CAMP}/messages`);
   $("#msgTable tbody").innerHTML = messages.map((m) => `<tr>
-    <td>${esc(m.subject)}</td><td>${m.kind === "task" ? "tarea" : "correo"}</td><td>${m.is_attack ? "sí" : "no"}</td>
-    <td>${m.is_attack ? esc(m.vector) : "—"}</td><td>${m.enviados}</td><td>${m.abiertos}</td><td>${m.clics}</td>
-    <td>${m.conversiones}</td><td>${m.reportes}</td>
+    <td>${esc(m.subject)}</td><td>${badge(m.vector, m.is_attack)}</td><td>${m.is_attack ? (VEC_LABEL[m.vector] || m.vector) : "—"}</td>
+    <td>${m.enviados}</td><td>${m.abiertos}</td><td>${m.clics}</td><td>${m.conversiones}</td><td>${m.reportes}</td>
     <td>
-      <button class="btn-xs" data-send="${m.id}" data-subj="${esc(m.subject)}">enviar</button>
+      <button class="btn-xs" data-send="${m.id}" data-subj="${esc(m.subject)}" data-atk="${m.is_attack}" data-vec="${esc(m.vector || "")}">enviar</button>
       <button class="btn-xs ghost" data-clone="${m.id}">clonar</button>
       <button class="btn-xs ghost" data-delmsg="${m.id}">borrar</button>
-    </td></tr>`).join("");
-  $$("#msgTable [data-send]").forEach((b) => b.onclick = () => openSend(b.dataset.send, b.dataset.subj));
+    </td></tr>`).join("") || `<tr><td colspan="9" class="hint">Sin mensajes. Redacta uno arriba.</td></tr>`;
+  $$("#msgTable [data-send]").forEach((b) => b.onclick = () => openSend(b.dataset));
   $$("#msgTable [data-clone]").forEach((b) => b.onclick = async () => { try { await api("POST", `/api/messages/${b.dataset.clone}/clone`); loadMessages(); } catch (e) { alert(e.message); } });
-  $$("#msgTable [data-delmsg]").forEach((b) => b.onclick = async () => { if (confirm("¿Borrar mensaje y sus envíos?")) { try { await api("DELETE", `/api/messages/${b.dataset.delmsg}`); loadMessages(); } catch (e) { alert(e.message); } } });
+  $$("#msgTable [data-delmsg]").forEach((b) => b.onclick = async () => { if (confirm("¿Borrar mensaje y sus envíos?")) { try { await api("DELETE", `/api/messages/${b.dataset.delmsg}`); loadMessages(); loadPreflight(); } catch (e) { alert(e.message); } } });
+  markDone("msg", messages.some((m) => m.is_attack && Number(m.enviados) > 0));
 }
 $("#msgForm").addEventListener("submit", async (e) => {
   e.preventDefault();
+  if (!CURRENT_CAMP) return alert("Elige una campaña en el paso 2.");
   const f = e.target;
   const isAttack = f.is_attack.value === "true";
   const payload = f.template_id.value
@@ -236,47 +347,73 @@ $("#msgForm").addEventListener("submit", async (e) => {
     : { kind: f.kind.value, is_attack: isAttack, vector: isAttack ? f.vector.value : undefined, sender_label: f.sender_label.value || null,
         subject: f.subject.value, body: f.body.value || null, cta_label: isAttack ? (f.cta_label.value || "Abrir") : undefined,
         landing_kind: isAttack ? f.landing_kind.value : undefined };
-  try { await api("POST", `/api/campaigns/${MSG_CAMP}/messages`, payload); f.reset(); toggleMsgAttack(); loadMessages(); loadCampaigns(); statusEl.textContent = "Mensaje guardado ✓"; }
+  try { await api("POST", `/api/campaigns/${CURRENT_CAMP}/messages`, payload); f.reset(); toggleMsgAttack(); loadMessages(); statusEl.textContent = "Mensaje guardado ✓"; }
   catch (err) { alert(err.message); }
 });
-async function openSend(id, subject) {
-  CURRENT_MSG = id;
+
+let COVERAGE = { teams: [] };
+async function openSend(d) {
+  CURRENT_MSG = { id: d.send, subject: d.subj, isAttack: d.atk === "true", vector: d.vec };
   $("#sendPanel").hidden = false;
-  $("#sendMsgSubject").textContent = subject;
-  const { teams } = await api("GET", `/api/campaigns/${MSG_CAMP}/teams`);
-  $("#sendTeams").innerHTML = teams.map((t) => `<label class="chk"><input type="checkbox" value="${esc(t.team_label)}"> ${esc(t.team_label)} (${t.participantes})</label>`).join("")
-    || '<span class="hint">No hay participantes con enlace en esta campaña.</span>';
+  $("#sendMsgSubject").textContent = d.subj;
   $("#sendMsg").textContent = "";
+  const [{ teams: tms }, cov] = await Promise.all([
+    api("GET", `/api/campaigns/${CURRENT_CAMP}/teams`),
+    api("GET", `/api/campaigns/${CURRENT_CAMP}/coverage`),
+  ]);
+  COVERAGE = cov;
+  $("#sendTeams").innerHTML = tms.map((t) => {
+    const c = cov.teams.find((x) => x.team_label === t.team_label);
+    const otras = c ? [...new Set(c.ataques.map((a) => a.vector))].filter((v) => v !== CURRENT_MSG.vector) : [];
+    const note = CURRENT_MSG.isAttack && otras.length ? ` — ⚠ ya recibió: ${otras.map((v) => VEC_LABEL[v] || v).join(", ")}` : "";
+    return `<label class="chk"><input type="checkbox" value="${esc(t.team_label)}"> ${esc(t.team_label)} (${t.participantes})<span style="color:#b45309">${note}</span></label>`;
+  }).join("") || '<span class="hint">No hay participantes con enlace. Genera los enlaces en el paso 2.</span>';
+  $("#sendCoverage").innerHTML = CURRENT_MSG.isAttack
+    ? "Recuerda: <strong>una técnica por equipo</strong>. Los equipos con ⚠ ya tienen otra técnica."
+    : "Mensaje de relleno: puedes enviarlo a todos sin problema.";
   $("#sendPanel").scrollIntoView({ behavior: "smooth" });
 }
-$("#sendGoBtn").addEventListener("click", async () => {
+async function doSend(body) {
+  try {
+    const r = await api("POST", `/api/messages/${CURRENT_MSG.id}/send`, body);
+    $("#sendMsg").textContent = `Enviado a ${r.delivered} (${r.skipped} ya lo tenían).`;
+    loadMessages(); loadPreflight(); loadCampaigns();
+  } catch (e) { alert(e.message); }
+}
+$("#sendGoBtn").addEventListener("click", () => {
   const team_labels = $$("#sendTeams input:checked").map((i) => i.value);
   if (!team_labels.length) return alert("Marca al menos un equipo.");
-  try { const r = await api("POST", `/api/messages/${CURRENT_MSG}/send`, { team_labels }); $("#sendMsg").textContent = `Enviado a ${r.delivered} (${r.skipped} ya lo tenían).`; loadMessages(); loadCampaigns(); }
-  catch (e) { alert(e.message); }
+  if (CURRENT_MSG.isAttack) {
+    const conflict = team_labels.filter((tl) => {
+      const c = COVERAGE.teams.find((x) => x.team_label === tl);
+      return c && c.ataques.some((a) => a.vector !== CURRENT_MSG.vector);
+    });
+    if (conflict.length && !confirm(`${conflict.join(", ")} ya recibieron otra técnica. Enviar otra MEZCLA los datos de ese equipo y complica el análisis.\n\n¿Enviar de todas formas?`)) return;
+  }
+  doSend({ team_labels });
 });
-$("#sendAllBtn").addEventListener("click", async () => {
-  if (!confirm("¿Enviar a TODA la campaña?")) return;
-  try { const r = await api("POST", `/api/messages/${CURRENT_MSG}/send`, { all: true }); $("#sendMsg").textContent = `Enviado a ${r.delivered} (${r.skipped} ya lo tenían).`; loadMessages(); loadCampaigns(); }
-  catch (e) { alert(e.message); }
+$("#sendAllBtn").addEventListener("click", () => {
+  const msg = CURRENT_MSG.isAttack
+    ? "Vas a enviar un ATAQUE a TODA la campaña. En esta prueba se recomienda una técnica por equipo, no la misma a todos. ¿Continuar?"
+    : "¿Enviar este mensaje de relleno a toda la campaña?";
+  if (confirm(msg)) doSend({ all: true });
 });
 
-/* ================= PARTICIPANTES ================= */
-async function loadParticipants() {
-  const { participants } = await api("GET", "/api/participants");
-  $("#partCount").textContent = participants.length;
-  $("#partTable tbody").innerHTML = participants.map((p) => `<tr>
-    <td>${esc(p.external_hash)}</td><td>${esc(p.role)}</td><td>${esc(p.team_label || "—")}</td>
-    <td>${esc(p.group_assignment || "—")}</td><td>${p.consent_given ? "sí" : "no"}</td></tr>`).join("");
+/* ================= 5 · RESULTADOS ================= */
+async function loadResults() {
+  try {
+    const d = await api("GET", "/api/dashboard/overview");
+    const t = d.totales || {}, f = d.embudo || {};
+    const cards = [
+      { v: f.recibieron ?? 0, l: "Recibieron el ataque" },
+      { v: (f.cayeron ?? 0) + (f.recibieron ? ` (${Math.round((f.cayeron / f.recibieron) * 100)}%)` : ""), l: "Cayeron" },
+      { v: f.reportaron ?? 0, l: "Lo reportaron" },
+      { v: (d.percepcion?.reconocieron_pct ?? 0) + "%", l: "Reconocieron la simulación" },
+    ];
+    $("#resCards").innerHTML = cards.map((c) => `<div class="card"><div class="value">${c.v}</div><div class="label">${c.l}</div></div>`).join("");
+  } catch (e) { $("#resCards").innerHTML = `<p class="hint">Error: ${esc(e.message)}</p>`; }
 }
-$("#importCsvBtn").addEventListener("click", async () => {
-  try { const r = await api("POST", "/api/participants/import-csv", $("#csvBox").value, true); $("#importMsg").textContent = `Importados ${r.imported}, fallidos ${r.failed}.`; loadParticipants(); }
-  catch (e) { $("#importMsg").textContent = "Error: " + e.message; }
-});
-$("#importJsonBtn").addEventListener("click", async () => {
-  try { const r = await api("POST", "/api/participants/import", JSON.parse($("#jsonBox").value)); $("#importMsg").textContent = `Importados ${r.imported}, fallidos ${r.failed}.`; loadParticipants(); }
-  catch (e) { $("#importMsg").textContent = "Error: " + e.message; }
-});
 
+/* ================= arranque ================= */
 toggleAttackFields(); toggleMsgAttack();
 if (KEY) $("#connectBtn").click();

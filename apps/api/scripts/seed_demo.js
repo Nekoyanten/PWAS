@@ -27,7 +27,7 @@ async function main() {
     const t = await pool.query(
       `INSERT INTO templates (name, vector, channel, kind, is_attack, sender_label, subject_or_headline, message_body, cta_label, landing_kind)
        VALUES ($1,$2,'web','email',true,'Notificaciones',$3,$4,'Abrir','form') RETURNING id`,
-      [`Plantilla demo — ${vector}`, vector, `Aviso simulado (${vector})`, `<p>Mensaje demo del vector <b>${vector}</b>.</p>`]
+      [`(demo, borrar) ${vector}`, vector, `Aviso simulado (${vector})`, `<p>Mensaje demo del vector <b>${vector}</b>.</p>`]
     );
     const m = await pool.query(
       `INSERT INTO messages (campaign_id, template_id, kind, is_attack, vector, sender_label, subject, body, cta_label, landing_kind)

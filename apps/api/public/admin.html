@@ -8,138 +8,201 @@
 </head>
 <body>
   <header>
-    <h1>PAWS — Administración de campañas</h1>
-    <p class="subtitle">Plantillas · campañas · mensajes · participantes. Resultados en <a href="/index.html">/index.html</a></p>
+    <h1>PAWS — Panel de la simulación</h1>
+    <p class="subtitle">Sigue los pasos 1 → 5. Resultados en <a href="/index.html">el dashboard</a>.</p>
     <div class="apikey-bar">
-      <label>Clave de administrador <input type="password" id="apiKey" placeholder="ADMIN_API_KEY"></label>
+      <label style="color:#cdd7ee;font-size:.85rem">Clave de administrador
+        <input type="password" id="apiKey" placeholder="ADMIN_API_KEY">
+      </label>
       <button id="connectBtn">Conectar</button>
+      <label style="color:#cdd7ee;font-size:.85rem">Campaña activa
+        <select id="campSel"><option value="">—</option></select>
+      </label>
       <span id="status"></span>
     </div>
   </header>
 
   <main>
-    <nav class="tabs">
-      <button data-tab="tpl" class="active">Plantillas</button>
-      <button data-tab="camp">Campañas</button>
-      <button data-tab="msg">Mensajes</button>
-      <button data-tab="part">Participantes</button>
+    <details class="glossary">
+      <summary>¿Qué significa cada término? (léelo una vez)</summary>
+      <dl>
+        <dt>Campaña</dt><dd>Una tanda de la simulación: un grupo de participantes con sus enlaces y sus mensajes. Normalmente tendrás una sola campaña por sesión.</dd>
+        <dt>Participante / equipo</dt><dd>Cada persona que hace la prueba. El <em>equipo</em> (o sala) es la etiqueta que las agrupa: en esta prueba <strong>cada equipo recibe una técnica de ataque distinta</strong> para poder compararlas.</dd>
+        <dt>Enlace <code>/t/…</code></dt><dd>La dirección personal que le pasas a cada participante. Al abrirla ve la app señuelo "TaskFlow".</dd>
+        <dt>Plantilla</dt><dd>Un mensaje ya redactado y guardado para reutilizar. Puede ser de <strong>ataque</strong> o de <strong>relleno</strong>.</dd>
+        <dt>Mensaje de ataque</dt><dd>El estímulo del estudio: parece real pero lleva a una "página trampa". Tiene una <strong>técnica</strong>.</dd>
+        <dt>Mensaje de relleno (benigno)</dt><dd>Un mensaje normal y sin trampa (bienvenida, reunión, boletín…). Sirve para que la bandeja parezca real. No mide nada.</dd>
+        <dt>Técnica (o "vector")</dt><dd>El principio de influencia que usa el ataque: <span class="badge autoridad">autoridad</span> <span class="badge urgencia">urgencia</span> <span class="badge escasez">escasez</span> <span class="badge prueba_social">prueba social</span> <span class="badge curiosidad">curiosidad</span>.</dd>
+        <dt>Página trampa (aterrizaje)</dt><dd>Lo que ve el participante tras pulsar el botón del ataque. <strong>form</strong> = pantalla que pide usuario y contraseña (nunca se guardan). <strong>permiso</strong> = pantalla de "autorizar app" tipo Google (se guarda solo "autorizó sí/no").</dd>
+        <dt>Alcance</dt><dd>Qué dice la pantalla de permiso que la "app" podrá ver (tu perfil, tus tareas, tu agenda…). Es simulado.</dd>
+        <dt>Entregado · Abierto · Clic · Conversión · Reporte</dt><dd>Los pasos que medimos: le llegó el mensaje · lo abrió · pulsó el botón del ataque · <strong>cayó</strong> (envió el formulario o concedió el permiso) · lo marcó como sospechoso.</dd>
+      </dl>
+    </details>
+
+    <nav class="steps">
+      <button data-tab="part" class="active"><span class="n">1</span> Participantes</button>
+      <button data-tab="camp"><span class="n">2</span> Campaña y enlaces</button>
+      <button data-tab="tpl"><span class="n">3</span> Plantillas</button>
+      <button data-tab="msg"><span class="n">4</span> Mensajes</button>
+      <button data-tab="res"><span class="n">5</span> Resultados</button>
     </nav>
 
-    <!-- ============ PLANTILLAS ============ -->
-    <section id="tab-tpl" class="tabpane">
+    <!-- ============ 1 · PARTICIPANTES ============ -->
+    <section id="tab-part" class="tabpane">
       <div class="panel">
-        <h2>Plantillas</h2>
-        <p class="hint">Mensajes reutilizables. Un mensaje de <strong>ataque</strong> tiene vector y página de aterrizaje; uno benigno es solo relleno realista.</p>
-        <button id="seedDefaultsBtn" class="btn-sm">Crear el juego estándar (5 ataques + 2 benignos)</button>
-        <table id="tplTable"><thead><tr><th>Nombre</th><th>Tipo</th><th>Ataque</th><th>Vector</th><th>Aterrizaje</th><th></th></tr></thead><tbody></tbody></table>
+        <h2>1 · Importar participantes</h2>
+        <p class="hint">Sube la lista de personas que harán la prueba. El identificador es un <code>external_hash</code>:
+          un código sin sentido que tú generas <strong>fuera</strong> de este sistema (p. ej. <code>p01</code>, <code>p02</code>…).
+          Nunca subas nombres, correos ni documentos. El <strong>equipo</strong> es la sala o grupo; en esta prueba cada equipo recibirá una técnica distinta.</p>
+        <h3>Pegar como CSV</h3>
+        <p class="help">Primera línea igual que el ejemplo. Roles válidos: <code>estudiante</code>, <code>profesor</code>, <code>directivo</code>.</p>
+        <textarea id="csvBox" rows="6" class="full-w" placeholder="external_hash,role,team_label
+p01,estudiante,Equipo 1
+p02,estudiante,Equipo 1
+p03,profesor,Equipo 2
+p04,directivo,Equipo 2"></textarea>
+        <div class="form-actions"><button id="importCsvBtn" class="btn-sm">Importar CSV</button><span id="importMsg" class="hint"></span></div>
+        <details><summary style="cursor:pointer;font-size:.85rem;color:#41506b">…o pegar como JSON</summary>
+          <textarea id="jsonBox" rows="4" class="full-w" placeholder='{"participants":[{"external_hash":"p01","role":"estudiante","team_label":"Equipo 1"}]}'></textarea>
+          <button id="importJsonBtn" class="btn-sm">Importar JSON</button>
+        </details>
+      </div>
+      <div class="panel">
+        <h2>Participantes cargados (<span id="partCount">0</span>)</h2>
+        <table id="partTable"><thead><tr><th>Identificador</th><th>Rol</th><th>Equipo</th><th>Consintió</th></tr></thead><tbody></tbody></table>
+      </div>
+    </section>
+
+    <!-- ============ 2 · CAMPAÑA ============ -->
+    <section id="tab-camp" class="tabpane" hidden>
+      <div class="panel">
+        <h2>2 · Crear la campaña</h2>
+        <p class="hint">Solo necesita un nombre (p. ej. "Sesión 12 de septiembre"). Después genera un enlace para cada participante.</p>
+        <form id="campForm" class="form-actions">
+          <input name="name" placeholder="Nombre de la campaña" required style="padding:.45rem .55rem;border:1px solid #cbd3e1;border-radius:6px;min-width:260px">
+          <button type="submit" class="btn-sm">Crear campaña</button>
+        </form>
+      </div>
+
+      <div class="panel" id="campDetailPanel" hidden>
+        <h2>Campaña: <span id="campDetailName"></span> <span id="campStatusBadge" class="badge benigno"></span></h2>
+        <div class="form-actions">
+          <button id="genTokensBtn" class="btn-sm">Generar enlaces para todos</button>
+          <button id="copyLinksBtn" class="btn-sm ghost">Copiar enlaces</button>
+          <button id="downloadLinksBtn" class="btn-sm ghost">Descargar CSV</button>
+          <button id="startCampBtn" class="btn-sm ghost">Marcar "en curso"</button>
+          <button id="finishCampBtn" class="btn-sm ghost">Marcar "finalizada"</button>
+          <button id="resetCampBtn" class="btn-sm danger">Reiniciar (borra respuestas, para pruebas)</button>
+        </div>
+
+        <h3>Verificación previa a la sesión</h3>
+        <ul class="checklist" id="preflight"><li><span class="mark">·</span> Conecta y elige una campaña.</li></ul>
+        <div id="preflightVerdict"></div>
+
+        <h3>Enlaces por participante</h3>
+        <table id="linksTable"><thead><tr><th>Identificador</th><th>Rol</th><th>Equipo</th><th>Mensajes</th><th>Encuesta</th><th>Enlace</th><th></th></tr></thead><tbody></tbody></table>
+      </div>
+    </section>
+
+    <!-- ============ 3 · PLANTILLAS ============ -->
+    <section id="tab-tpl" class="tabpane" hidden>
+      <div class="panel">
+        <h2>3 · Biblioteca de plantillas</h2>
+        <p class="hint">Mensajes ya redactados y listos para enviar. Empieza con la biblioteca estándar: 15 ataques (3 por técnica) + 6 de relleno.</p>
+        <div class="form-actions">
+          <button id="seedDefaultsBtn" class="btn-sm">Crear biblioteca estándar</button>
+          <button id="seedReplaceBtn" class="btn-sm ghost">Restaurar textos estándar</button>
+        </div>
+        <h3>Ataques <span class="badge atk">miden susceptibilidad</span></h3>
+        <table id="tplAtkTable"><thead><tr><th>Nombre</th><th>Técnica</th><th>Formato</th><th>Página trampa</th><th></th></tr></thead><tbody></tbody></table>
+        <h3>Relleno realista <span class="badge benigno">sin trampa</span></h3>
+        <table id="tplBenTable"><thead><tr><th>Nombre</th><th>Formato</th><th>Remitente</th><th></th></tr></thead><tbody></tbody></table>
       </div>
       <div class="panel">
         <h2 id="tplFormTitle">Nueva plantilla</h2>
         <form id="tplForm" class="grid2">
           <input type="hidden" name="id">
-          <label>Nombre<input name="name" required></label>
+          <label>Nombre<input name="name" required><span class="help">Solo para ti, para reconocerla en la lista.</span></label>
+          <label>Tipo
+            <select name="is_attack" id="isAttack">
+              <option value="true">Ataque — mide susceptibilidad</option>
+              <option value="false">Relleno — mensaje normal sin trampa</option>
+            </select>
+          </label>
           <label>Formato
-            <select name="kind"><option value="email">correo</option><option value="task">tarea</option></select>
+            <select name="kind"><option value="email">Correo</option><option value="task">Tarea asignada</option></select>
           </label>
-          <label>¿Es un ataque?
-            <select name="is_attack" id="isAttack"><option value="true">sí — mide susceptibilidad</option><option value="false">no — mensaje benigno</option></select>
-          </label>
-          <label id="vectorRow">Vector
+          <label id="vectorRow">Técnica
             <select name="vector">
               <option value="autoridad">autoridad</option><option value="urgencia">urgencia</option>
-              <option value="escasez">escasez</option><option value="prueba_social">prueba_social</option>
+              <option value="escasez">escasez</option><option value="prueba_social">prueba social</option>
               <option value="curiosidad">curiosidad</option>
             </select>
           </label>
-          <label>Remitente ficticio<input name="sender_label" placeholder="Coordinación Académica"></label>
+          <label>Remitente que aparece<input name="sender_label" placeholder="Soporte TI"></label>
           <label class="full">Asunto / titular<input name="subject_or_headline" required></label>
-          <label class="full">Cuerpo (HTML simple)<textarea name="message_body" rows="4"></textarea></label>
+          <label class="full">Cuerpo del mensaje<textarea name="message_body" rows="4"></textarea>
+            <span class="help">Texto normal. Puedes usar &lt;b&gt;negrita&lt;/b&gt; y párrafos con &lt;p&gt;…&lt;/p&gt;.</span></label>
           <div class="full attack-only">
             <div class="grid2">
-              <label>Texto del botón (CTA)<input name="cta_label" placeholder="Confirmar mis datos"></label>
-              <label>Aterrizaje
+              <label>Texto del botón<input name="cta_label" placeholder="Verificar mi cuenta"></label>
+              <label>Página trampa
                 <select name="landing_kind" id="landingKind">
-                  <option value="form">form — formulario de credenciales</option>
+                  <option value="form">form — pide usuario y contraseña</option>
                   <option value="permiso">permiso — autorización de app simulada</option>
                 </select>
               </label>
-              <label class="full" id="scopeRow" style="display:none">Alcance solicitado
+              <label class="full" id="scopeRow" style="display:none">Alcance que pide el permiso
                 <select name="scope"><option>perfil</option><option>tareas</option><option>agenda</option><option>equipo</option><option>archivos</option></select>
               </label>
-              <label class="full">Título del aterrizaje<input name="landing_titulo"></label>
-              <label class="full">Detalle del aterrizaje<input name="landing_detalle"></label>
+              <label class="full">Título de la página trampa<input name="landing_titulo" placeholder="Verificación de cuenta"></label>
+              <label class="full">Texto de apoyo de la página trampa<input name="landing_detalle"></label>
             </div>
           </div>
           <div class="full form-actions">
-            <button type="submit" class="btn-sm">Guardar</button>
+            <button type="submit" class="btn-sm">Guardar plantilla</button>
             <button type="button" id="tplCancel" class="btn-sm ghost" style="display:none">Cancelar</button>
           </div>
         </form>
       </div>
     </section>
 
-    <!-- ============ CAMPAÑAS ============ -->
-    <section id="tab-camp" class="tabpane" hidden>
-      <div class="panel">
-        <h2>Campañas</h2>
-        <table id="campTable"><thead><tr><th>Nombre</th><th>Estado</th><th>Semilla</th><th>Enlaces</th><th>Mensajes</th><th>Envíos</th><th></th></tr></thead><tbody></tbody></table>
-      </div>
-      <div class="panel">
-        <h2>Nueva campaña</h2>
-        <form id="campForm" class="grid2">
-          <label>Nombre<input name="name" required></label>
-          <label>Semilla (opcional)<input name="seed" placeholder="se genera si lo dejas vacío"></label>
-          <div class="full"><span class="hint">Plantillas disponibles para esta campaña:</span><div id="campTplChecks" class="checks"></div></div>
-          <div class="full form-actions"><button type="submit" class="btn-sm">Crear campaña</button></div>
-        </form>
-      </div>
-      <div class="panel" id="campDetailPanel" hidden>
-        <h2>Campaña: <span id="campDetailName"></span></h2>
-        <div class="form-actions">
-          <button id="genTokensBtn" class="btn-sm">Generar enlaces</button>
-          <select id="campStatusSel">
-            <option value="borrador">borrador</option><option value="en_curso">en_curso</option>
-            <option value="finalizada">finalizada</option><option value="cancelada">cancelada</option>
-          </select>
-          <button id="setStatusBtn" class="btn-sm ghost">Cambiar estado</button>
-          <button id="copyLinksBtn" class="btn-sm ghost">Copiar enlaces</button>
-          <button id="downloadLinksBtn" class="btn-sm ghost">Descargar CSV</button>
-          <button id="resetCampBtn" class="btn-sm danger">Reiniciar campaña (pruebas)</button>
-        </div>
-        <p class="hint">Equipos: <span id="campTeams"></span></p>
-        <table id="linksTable"><thead><tr><th>Hash</th><th>Rol</th><th>Equipo</th><th>Mensajes</th><th>Encuesta</th><th>Enlace</th><th></th></tr></thead><tbody></tbody></table>
-      </div>
-    </section>
-
-    <!-- ============ MENSAJES ============ -->
+    <!-- ============ 4 · MENSAJES ============ -->
     <section id="tab-msg" class="tabpane" hidden>
       <div class="panel">
-        <h2>Mensajes de campaña</h2>
-        <label>Campaña <select id="msgCampSel"></select></label>
-        <table id="msgTable"><thead><tr><th>Asunto</th><th>Formato</th><th>Ataque</th><th>Vector</th><th>Enviados</th><th>Abiertos</th><th>Clics</th><th>Conv.</th><th>Reportes</th><th></th></tr></thead><tbody></tbody></table>
-      </div>
-      <div class="panel">
-        <h2>Redactar mensaje</h2>
+        <h2>4 · Enviar mensajes a la campaña</h2>
+        <p class="hint"><strong>Plan de esta prueba:</strong> a cada equipo, <u>un</u> mensaje de ataque de <u>una</u> técnica.
+          Puedes además enviar mensajes de relleno a todos. Si intentas enviar dos técnicas al mismo equipo te avisará.</p>
+        <div class="banner warn" id="msgNoCamp" hidden>Primero crea o elige una campaña en el paso 2.</div>
+
+        <h3>Redactar el mensaje</h3>
         <form id="msgForm" class="grid2">
-          <label>Partir de una plantilla
+          <label class="full">Partir de una plantilla
             <select name="template_id" id="msgTpl"><option value="">— redactar desde cero —</option></select>
           </label>
-          <label>Formato<select name="kind"><option value="email">correo</option><option value="task">tarea</option></select></label>
-          <label>¿Es un ataque?<select name="is_attack" id="msgIsAttack"><option value="false">no</option><option value="true">sí</option></select></label>
-          <label class="msgatk">Vector
-            <select name="vector"><option value="autoridad">autoridad</option><option value="urgencia">urgencia</option><option value="escasez">escasez</option><option value="prueba_social">prueba_social</option><option value="curiosidad">curiosidad</option></select>
+          <label>Formato<select name="kind"><option value="email">Correo</option><option value="task">Tarea</option></select></label>
+          <label>Tipo<select name="is_attack" id="msgIsAttack"><option value="false">Relleno</option><option value="true">Ataque</option></select></label>
+          <label class="msgatk">Técnica
+            <select name="vector"><option value="autoridad">autoridad</option><option value="urgencia">urgencia</option><option value="escasez">escasez</option><option value="prueba_social">prueba social</option><option value="curiosidad">curiosidad</option></select>
           </label>
           <label>Remitente<input name="sender_label"></label>
           <label class="full">Asunto<input name="subject"></label>
-          <label class="full">Cuerpo (HTML simple)<textarea name="body" rows="3"></textarea></label>
-          <label class="msgatk">Botón (CTA)<input name="cta_label"></label>
-          <label class="msgatk">Aterrizaje<select name="landing_kind"><option value="form">form</option><option value="permiso">permiso</option></select></label>
-          <div class="full form-actions"><button type="submit" class="btn-sm">Guardar mensaje</button></div>
+          <label class="full">Cuerpo<textarea name="body" rows="3"></textarea></label>
+          <label class="msgatk">Texto del botón<input name="cta_label"></label>
+          <label class="msgatk">Página trampa<select name="landing_kind"><option value="form">form</option><option value="permiso">permiso</option></select></label>
+          <div class="full form-actions"><button type="submit" class="btn-sm">Guardar el mensaje (aún no lo envía)</button></div>
         </form>
       </div>
+
+      <div class="panel">
+        <h2>Mensajes guardados en esta campaña</h2>
+        <table id="msgTable"><thead><tr><th>Asunto</th><th>Tipo</th><th>Técnica</th><th>Enviados</th><th>Abiertos</th><th>Clics</th><th>Cayeron</th><th>Reportes</th><th></th></tr></thead><tbody></tbody></table>
+      </div>
+
       <div class="panel" id="sendPanel" hidden>
         <h2>Enviar «<span id="sendMsgSubject"></span>»</h2>
-        <p class="hint">Elige a qué equipos llega. Un participante que ya lo recibió no lo recibe dos veces (para re-medir, clona el mensaje).</p>
+        <p class="hint">Marca los equipos. Quien ya lo recibió no lo recibe otra vez (para volver a medir, usa "clonar").</p>
+        <div id="sendCoverage" class="hint"></div>
         <div id="sendTeams" class="checks"></div>
         <div class="form-actions">
           <button id="sendGoBtn" class="btn-sm">Enviar a los equipos marcados</button>
@@ -149,25 +212,13 @@
       </div>
     </section>
 
-    <!-- ============ PARTICIPANTES ============ -->
-    <section id="tab-part" class="tabpane" hidden>
+    <!-- ============ 5 · RESULTADOS ============ -->
+    <section id="tab-res" class="tabpane" hidden>
       <div class="panel">
-        <h2>Importar participantes</h2>
-        <p class="hint">El <code>external_hash</code> se genera FUERA de este sistema. Nunca subas nombres, correos ni documentos.</p>
-        <h3>CSV</h3>
-        <p class="hint">Cabecera: <code>external_hash,role,team_label,group_assignment,consent_given</code></p>
-        <textarea id="csvBox" rows="5" class="full-w" placeholder="external_hash,role,team_label
-h_001,estudiante,Equipo 1
-h_002,profesor,Equipo 1"></textarea>
-        <button id="importCsvBtn" class="btn-sm">Importar CSV</button>
-        <h3>JSON</h3>
-        <textarea id="jsonBox" rows="4" class="full-w" placeholder='{"participants":[{"external_hash":"h_001","role":"estudiante","team_label":"Equipo 1"}]}'></textarea>
-        <button id="importJsonBtn" class="btn-sm">Importar JSON</button>
-        <span id="importMsg" class="hint"></span>
-      </div>
-      <div class="panel">
-        <h2>Participantes (<span id="partCount">0</span>)</h2>
-        <table id="partTable"><thead><tr><th>Hash</th><th>Rol</th><th>Equipo</th><th>Grupo</th><th>Consent.</th></tr></thead><tbody></tbody></table>
+        <h2>5 · Resultados</h2>
+        <p class="hint">El detalle está en el <a href="/index.html">dashboard</a> (se actualiza solo durante la sesión).</p>
+        <section class="cards" id="resCards"></section>
+        <a class="btn-sm" href="/index.html">Abrir el dashboard completo</a>
       </div>
     </section>
   </main>

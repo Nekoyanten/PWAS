@@ -9,13 +9,14 @@
 </head>
 <body>
   <header>
-    <h1>PAWS — Simulación de Ingeniería Social</h1>
-    <p class="subtitle">Panel del investigador · solo datos agregados, ningún participante identificable · <a href="/admin.html" style="color:#fff">Administración</a></p>
+    <h1>PAWS — Resultados de la simulación</h1>
+    <p class="subtitle">Solo datos agregados; ningún participante es identificable. · <a href="/admin.html">Volver al panel</a></p>
     <div class="apikey-bar">
-      <label>Clave de administrador
+      <label style="color:#cdd7ee;font-size:.85rem">Clave de administrador
         <input type="password" id="apiKey" placeholder="ADMIN_API_KEY">
       </label>
-      <button id="loadBtn">Cargar datos</button>
+      <button id="loadBtn">Cargar</button>
+      <label style="color:#cdd7ee;font-size:.85rem"><input type="checkbox" id="autoChk" checked> actualizar solo</label>
       <span id="status"></span>
     </div>
   </header>
@@ -24,24 +25,38 @@
     <section class="cards" id="totalsCards"></section>
 
     <section class="panel">
-      <h2>Por equipo / sala de laboratorio</h2>
-      <p class="hint">Ejemplo de lectura: "Equipo 5 — 3 de 12 participantes cayeron (25 %)". Nunca se muestra quién.</p>
-      <table id="teamTable"><thead><tr><th>Equipo</th><th>Expuestos</th><th>Caídos</th><th>Tasa de caída</th></tr></thead><tbody></tbody></table>
+      <h2>Lectura rápida</h2>
+      <div id="readout" class="readout">Carga los datos para ver el resumen.</div>
     </section>
 
     <section class="panel">
-      <h2>Detalle de caídas por equipo, escenario y motivo</h2>
-      <table id="fallsDetailTable"><thead><tr><th>Equipo</th><th>Escenario</th><th>Motivo</th><th>Participantes</th></tr></thead><tbody></tbody></table>
+      <h2>Embudo: de recibir el ataque a caer</h2>
+      <p class="hint">Cada barra es un paso. El porcentaje es respecto al paso anterior.</p>
+      <div class="funnel" id="funnel"></div>
     </section>
 
     <section class="panel">
-      <h2>CTR y conversión por rol y escenario</h2>
-      <table id="roleVectorTable"><thead><tr><th>Rol</th><th>Escenario</th><th>Expuestos</th><th>CTR</th><th>Conversión</th><th>Permisos</th><th>Reportes</th><th>Tiempo reacción prom.</th></tr></thead><tbody></tbody></table>
+      <h2>Caída por técnica</h2>
+      <p class="hint">Qué principio de influencia funcionó más. "Conversión" = porcentaje de los que recibieron ese ataque y cayeron.</p>
+      <canvas id="tecnicaChart" height="110"></canvas>
+      <table id="tecnicaTable"><thead><tr><th>Técnica</th><th>Expuestos</th><th>Abrieron</th><th>Clic</th><th>Cayeron</th><th>Conversión</th><th>Reportes</th></tr></thead><tbody></tbody></table>
     </section>
 
     <section class="panel">
-      <h2>Motivos de caída (global)</h2>
-      <canvas id="reasonsChart" height="120"></canvas>
+      <h2>Caída por rol</h2>
+      <canvas id="rolChart" height="90"></canvas>
+      <table id="rolTable"><thead><tr><th>Rol</th><th>Expuestos</th><th>Clic</th><th>Cayeron</th><th>Conversión</th></tr></thead><tbody></tbody></table>
+    </section>
+
+    <section class="panel">
+      <h2>Motivo que dijeron los que cayeron</h2>
+      <p class="hint">Autoinformado en la encuesta final. No es una deducción del sistema.</p>
+      <canvas id="reasonsChart" height="110"></canvas>
+    </section>
+
+    <section class="panel">
+      <h2>Por equipo</h2>
+      <table id="teamTable"><thead><tr><th>Equipo</th><th>Participantes</th><th>Cayeron</th><th>Tasa de caída</th></tr></thead><tbody></tbody></table>
     </section>
   </main>
 

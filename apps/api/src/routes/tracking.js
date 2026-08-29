@@ -129,6 +129,27 @@ trackingRouter.get("/:token/app", async (req, res) => {
   res.set(HTML).send(renderApp(pc.access_token, { inbox }));
 });
 
+// Bandeja en JSON para el sondeo en vivo del tablero (sin recargar la página).
+trackingRouter.get("/:token/inbox.json", async (req, res) => {
+  const pc = await loadPC(req.params.token);
+  if (!pc || !pc.consent_given) return res.status(404).json({ error: "no" });
+  if (pc.finished_at || pc.campaign_status === "finalizada") {
+    return res.json({ done: true, unread: 0, items: [] });
+  }
+  const inbox = await buildInbox(pc.id);
+  res.json({
+    unread: inbox.filter((m) => m.unread).length,
+    items: inbox.map((m) => ({
+      deliveryId: m.deliveryId,
+      kind: m.kind,
+      from: m.from,
+      subject: m.subject,
+      preview: (m.body || "").replace(/<[^>]+>/g, "").slice(0, 90),
+      unread: m.unread,
+    })),
+  });
+});
+
 // Ver un mensaje entregado. Abrir uno de ataque = evento 'abierto'.
 trackingRouter.get("/:token/d/:deliveryId", async (req, res) => {
   const pc = await loadPC(req.params.token);
