@@ -156,10 +156,17 @@ test("reset de participante permite volver a hacer la prueba", async () => {
 
   const reset = await api("POST", `/api/campaigns/${c.body.campaign.id}/participants/${pcId}/reset`);
   assert.equal(reset.body.reset, 1);
-  ev = await pool.query(`SELECT COUNT(*)::int n FROM events WHERE participant_campaign_id = $1`, [pcId]);
-  assert.equal(ev.rows[0].n, 0, "el reset borra los eventos");
+  // el reset borra los eventos de interacción (abierto/clic/…) pero NO el mensaje
+  ev = await pool.query(
+    `SELECT COUNT(*)::int n FROM events WHERE participant_campaign_id = $1 AND event_type <> 'entregado'`, [pcId]);
+  assert.equal(ev.rows[0].n, 0, "el reset borra los eventos de interacción");
+  const deliv = await pool.query(`SELECT COUNT(*)::int n FROM deliveries WHERE participant_campaign_id = $1`, [pcId]);
+  assert.ok(deliv.rows[0].n > 0, "el reset conserva los mensajes ya enviados");
   const pc = await pool.query(`SELECT session_started_at, finished_at FROM participant_campaign WHERE id = $1`, [pcId]);
   assert.equal(pc.rows[0].finished_at, null);
   // tras el reset vuelve a pedir consentimiento
   assert.match(await (await hop(`/t/${token}`)).text(), /piloto de usabilidad/i);
+  // y el mensaje sigue en la bandeja al re-hacer la prueba
+  await form(`/t/${token}/consent`, "consent=1");
+  assert.match(await (await hop(`/t/${token}/app`)).text(), /\/d\/[0-9a-f-]{36}/);
 });

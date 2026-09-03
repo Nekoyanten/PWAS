@@ -194,27 +194,34 @@ campaignsRouter.get("/:id/links", requireAdmin, async (req, res) => {
   res.json({ links: r.rows.map((x) => ({ ...x, url: `/t/${x.access_token}` })) });
 });
 
-// Reinicia TODA la campaña para pruebas: borra deliveries, eventos, encuestas
-// y estado de sesión. Conserva participantes, enlaces y mensajes.
+// Reinicia TODA la campaña para pruebas: borra eventos, encuestas y estado de
+// sesión, y deja los mensajes ya enviados como "recién llegados" (sin abrir).
+// Conserva participantes, enlaces y mensajes: el participante puede repetir
+// la prueba con la misma bandeja.
 campaignsRouter.post("/:id/reset", requireAdmin, async (req, res) => {
   const ids = await query(`SELECT id FROM participant_campaign WHERE campaign_id = $1`, [req.params.id]);
   const pcIds = ids.rows.map((r) => r.id);
   if (pcIds.length === 0) return res.json({ reset: 0 });
   await query(`DELETE FROM events WHERE participant_campaign_id = ANY($1::uuid[])`, [pcIds]);
-  await query(`DELETE FROM deliveries WHERE participant_campaign_id = ANY($1::uuid[])`, [pcIds]);
   await query(`DELETE FROM post_session_survey WHERE participant_campaign_id = ANY($1::uuid[])`, [pcIds]);
+  await query(`UPDATE deliveries SET delivered_at = now() WHERE participant_campaign_id = ANY($1::uuid[])`, [pcIds]);
+  await query(`INSERT INTO events (participant_campaign_id, delivery_id, event_type)
+               SELECT d.participant_campaign_id, d.id, 'entregado' FROM deliveries d WHERE d.participant_campaign_id = ANY($1::uuid[])`, [pcIds]);
   await query(`UPDATE participant_campaign SET session_started_at = NULL, finished_at = NULL, usability_interactions = 0 WHERE id = ANY($1::uuid[])`, [pcIds]);
   await query(`UPDATE participants SET consent_given = FALSE, consent_timestamp = NULL WHERE id IN (SELECT participant_id FROM participant_campaign WHERE campaign_id = $1)`, [req.params.id]);
   res.json({ reset: pcIds.length });
 });
 
 // Reinicia un solo participante (mismo alcance que arriba, pero para uno).
+// Conserva los mensajes ya enviados y los deja sin abrir.
 campaignsRouter.post("/:id/participants/:pcId/reset", requireAdmin, async (req, res) => {
   const pc = await query(`SELECT id, participant_id FROM participant_campaign WHERE id = $1 AND campaign_id = $2`, [req.params.pcId, req.params.id]);
   if (pc.rows.length === 0) return res.status(404).json({ error: "Participante no encontrado en la campaña" });
   await query(`DELETE FROM events WHERE participant_campaign_id = $1`, [req.params.pcId]);
-  await query(`DELETE FROM deliveries WHERE participant_campaign_id = $1`, [req.params.pcId]);
   await query(`DELETE FROM post_session_survey WHERE participant_campaign_id = $1`, [req.params.pcId]);
+  await query(`UPDATE deliveries SET delivered_at = now() WHERE participant_campaign_id = $1`, [req.params.pcId]);
+  await query(`INSERT INTO events (participant_campaign_id, delivery_id, event_type)
+               SELECT d.participant_campaign_id, d.id, 'entregado' FROM deliveries d WHERE d.participant_campaign_id = $1`, [req.params.pcId]);
   await query(`UPDATE participant_campaign SET session_started_at = NULL, finished_at = NULL, usability_interactions = 0 WHERE id = $1`, [req.params.pcId]);
   await query(`UPDATE participants SET consent_given = FALSE, consent_timestamp = NULL WHERE id = $1`, [pc.rows[0].participant_id]);
   res.json({ reset: 1 });
