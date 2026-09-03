@@ -69,7 +69,34 @@ participantsRouter.post("/import-csv", requireAdmin, async (req, res) => {
   const lines = raw.split(/\r?\n/).filter((l) => l.trim() !== "");
   if (lines.length < 2) return res.status(400).json({ error: "El CSV necesita una cabecera y al menos una fila" });
 
-  const split = (line) => line.split(",").map((s) => s.trim().replace(/^"(.*)"$/, "$1"));
+  // Divide una línea CSV respetando comillas: un campo entre comillas puede
+  // contener comas (p.ej. un team_label como "Sistemas, turno tarde") y ""
+  // dentro de un campo entrecomillado es una comilla literal escapada. Un
+  // split(",") ingenuo cortaba esos campos en el punto equivocado.
+  const split = (line) => {
+    const out = [];
+    let cur = "";
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (inQuotes) {
+        if (c === '"') {
+          if (line[i + 1] === '"') { cur += '"'; i++; } else { inQuotes = false; }
+        } else {
+          cur += c;
+        }
+      } else if (c === '"' && cur === "") {
+        inQuotes = true;
+      } else if (c === ",") {
+        out.push(cur.trim());
+        cur = "";
+      } else {
+        cur += c;
+      }
+    }
+    out.push(cur.trim());
+    return out;
+  };
   const header = split(lines[0]).map((h) => h.toLowerCase());
   const idx = (name) => header.indexOf(name);
   if (idx("external_hash") === -1 || idx("role") === -1) {

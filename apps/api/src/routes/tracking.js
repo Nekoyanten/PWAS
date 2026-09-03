@@ -4,6 +4,7 @@ import { buildSurveySchema, debriefText } from "../lib/survey.js";
 import {
   renderWelcome, renderApp, renderMessage, renderStimulusLanding,
   renderActionDone, renderSurvey, renderDebrief, renderInvalid,
+  renderJoltingInterstitial,
 } from "../lib/decoy.js";
 
 export const trackingRouter = Router();
@@ -17,7 +18,7 @@ async function loadPC(token) {
   const r = await query(
     `SELECT pc.id, pc.participant_id, pc.campaign_id, pc.access_token,
             pc.session_started_at, pc.finished_at,
-            p.consent_given,
+            p.consent_given, p.group_assignment,
             c.name AS campaign_name, c.status AS campaign_status
      FROM participant_campaign pc
      JOIN participants p ON p.id = pc.participant_id
@@ -26,6 +27,25 @@ async function loadPC(token) {
     [token]
   );
   return r.rows[0] ?? null;
+}
+
+// TG §8.2.5 / §9.2: solo el grupo 'experimental' recibe la capa de
+// intervención (jolting). 'control' y participantes sin grupo asignado (p.ej.
+// datos de campañas antiguas o importados sin group_assignment) mantienen el
+// flujo original, sin interstitial.
+function isExperimental(pc) {
+  return pc.group_assignment === "experimental";
+}
+
+// ¿Ya se le mostró la intervención a este delivery? Se muestra una sola vez
+// por estímulo: un jolt repetido en cada re-visita dejaría de sorprender
+// (habituación) y no es lo que describe §8.2.5.
+async function interventionAlreadyShown(deliveryId) {
+  const r = await query(
+    `SELECT 1 FROM events WHERE delivery_id = $1 AND event_type = 'intervencion_mostrada'`,
+    [deliveryId]
+  );
+  return r.rows.length > 0;
 }
 
 async function loadDelivery(pcId, deliveryId) {
@@ -165,8 +185,31 @@ trackingRouter.get("/:token/d/:deliveryId", async (req, res) => {
   }));
 });
 
-// CTA del estímulo -> 'clic' + aterrizaje.
+// CTA del estímulo. Grupo control (o sin grupo): comportamiento original,
+// directo al aterrizaje. Grupo experimental, primera vez sobre este delivery:
+// se interpone la capa de intervención (jolting, TG §8.2.5) antes de dejar
+// pasar al aterrizaje o de permitir cancelar.
 trackingRouter.get("/:token/d/:deliveryId/go", async (req, res) => {
+  const pc = await loadPC(req.params.token);
+  if (!pc) return res.status(404).set(HTML).send(renderInvalid());
+  const d = await loadDelivery(pc.id, req.params.deliveryId);
+  if (!pc.consent_given || !d || !d.is_attack) return res.redirect(`/t/${encodeURIComponent(pc.access_token)}/app`);
+
+  if (isExperimental(pc) && !(await interventionAlreadyShown(d.delivery_id))) {
+    await recordOnce(pc.id, d.delivery_id, "intervencion_mostrada", reactionMs(d.delivered_at));
+    return res.set(HTML).send(renderJoltingInterstitial(pc.access_token, { deliveryId: d.delivery_id }));
+  }
+
+  await recordOnce(pc.id, d.delivery_id, "abierto", reactionMs(d.delivered_at));
+  await recordOnce(pc.id, d.delivery_id, "clic", reactionMs(d.delivered_at));
+  res.set(HTML).send(renderStimulusLanding(pc.access_token, {
+    deliveryId: d.delivery_id, landing_kind: d.landing_kind || "form", landing_config: d.landing_config || {},
+  }));
+});
+
+// El participante experimental sostiene la pausa obligatoria y decide
+// continuar de todas formas -> mismo registro y aterrizaje que el control.
+trackingRouter.post("/:token/d/:deliveryId/proceed", async (req, res) => {
   const pc = await loadPC(req.params.token);
   if (!pc) return res.status(404).set(HTML).send(renderInvalid());
   const d = await loadDelivery(pc.id, req.params.deliveryId);
@@ -176,6 +219,19 @@ trackingRouter.get("/:token/d/:deliveryId/go", async (req, res) => {
   res.set(HTML).send(renderStimulusLanding(pc.access_token, {
     deliveryId: d.delivery_id, landing_kind: d.landing_kind || "form", landing_config: d.landing_config || {},
   }));
+});
+
+// El participante experimental cancela desde la intervención -> se registra
+// como reversión de la acción de riesgo (TG §8.2.5, "bloquear o revertir") y
+// NUNCA se marca 'clic' ni 'abierto': para efectos de fell_for_attack, la
+// intervención evitó la caída.
+trackingRouter.post("/:token/d/:deliveryId/cancel", async (req, res) => {
+  const pc = await loadPC(req.params.token);
+  if (!pc) return res.status(404).set(HTML).send(renderInvalid());
+  const d = await loadDelivery(pc.id, req.params.deliveryId);
+  if (!d) return res.redirect(`/t/${encodeURIComponent(pc.access_token)}/app`);
+  await recordOnce(pc.id, d.delivery_id, "intervencion_cancelada", reactionMs(d.delivered_at));
+  res.redirect(`/t/${encodeURIComponent(pc.access_token)}/app`);
 });
 
 trackingRouter.post("/:token/d/:deliveryId/submit", async (req, res) => {

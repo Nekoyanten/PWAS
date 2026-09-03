@@ -729,6 +729,83 @@ document.getElementById('f').addEventListener('submit',function(e){
 </script>`);
 }
 
+// Capa de intervención PAWS (jolting cognitivo, TG §8.2.5). Se muestra solo
+// al grupo experimental, una vez por delivery, antes del aterrizaje real:
+//  - Pausa obligatoria de 1,5-2 s (retraso racional / pause-before-action)
+//    durante la cual el botón "Continuar de todas formas" está inhabilitado.
+//  - Saliencia adaptativa: alterna dos estilos de alerta (fuente ampliada +
+//    contraste rojo, o icono con parpadeo) según el delivery, para no generar
+//    siempre el mismo estímulo y reducir la habituación.
+//  - Aviso sonoro breve (Web Audio API) al aparecer, sin hardware háptico.
+//  - "Cancelar" siempre disponible de inmediato: es la forma en que este
+//    prototipo de software revierte la acción de riesgo (no existe forma
+//    segura de bloquear el clic ya ejecutado, así que se previene el
+//    siguiente paso en vez de revertir uno ya hecho).
+export function renderJoltingInterstitial(token, { deliveryId }) {
+  const t = encodeURIComponent(token);
+  const d = encodeURIComponent(deliveryId);
+  // Alternancia determinista por delivery (misma idea que assignBalanced: no
+  // depender de Math.random para poder probarlo).
+  let h = 0; for (const c of String(deliveryId)) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  const salientStyle = h % 2 === 0 ? "scale" : "pulse";
+  const pauseMs = 1500 + (h % 6) * 100; // 1500-2000 ms, TG §8.2.5
+
+  return shell("Un momento", `
+<div class="plate">
+  <div class="sheet jolt jolt-${salientStyle}" role="alert" aria-live="assertive">
+    <div class="brand">${LOGO} TaskFlow</div>
+    <h1>⚠ Espera un momento antes de continuar</h1>
+    <p class="sub">Este enlace tiene características de un mensaje de riesgo (remitente, urgencia o solicitud inusual). Tómate un segundo para revisarlo.</p>
+    <ul style="margin:.9rem 0;padding-left:1.1rem;color:var(--ink-2);font-size:.9rem;line-height:1.6">
+      <li>¿Esperabas este mensaje?</li>
+      <li>¿El remitente es quien dice ser?</li>
+      <li>¿Te está apurando a actuar ya mismo?</li>
+    </ul>
+    <div style="display:flex;gap:.6rem;flex-wrap:wrap;margin-top:1.2rem">
+      <form method="POST" action="/t/${t}/d/${d}/cancel" style="margin:0">
+        <button class="btn ghost" type="submit">Cancelar y volver</button>
+      </form>
+      <form method="POST" action="/t/${t}/d/${d}/proceed" style="margin:0">
+        <button class="btn" type="submit" id="jolt-continue" disabled>Continuar de todas formas (<span id="jolt-count">${(pauseMs / 1000).toFixed(1)}</span>s)</button>
+      </form>
+    </div>
+    <p class="note">Ejercicio académico autorizado · esta pausa es intencional.</p>
+  </div>
+</div>
+<style>
+.jolt.jolt-scale h1{font-size:1.6rem;color:var(--warn)}
+.jolt.jolt-pulse h1{color:var(--warn);animation:joltpulse 1s ease-in-out infinite}
+@keyframes joltpulse{0%,100%{opacity:1}50%{opacity:.55}}
+.jolt{border:2px solid var(--warn)}
+</style>
+<script>
+(function(){
+  var ms = ${pauseMs};
+  var btn = document.getElementById('jolt-continue');
+  var lbl = document.getElementById('jolt-count');
+  try {
+    var Ctx = window.AudioContext || window.webkitAudioContext;
+    if (Ctx) {
+      var ctx = new Ctx(), osc = ctx.createOscillator(), gain = ctx.createGain();
+      osc.frequency.value = 660; gain.gain.value = 0.05;
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.start(); osc.stop(ctx.currentTime + 0.18);
+    }
+  } catch (e) {}
+  var start = Date.now();
+  var timer = setInterval(function(){
+    var left = Math.max(0, ms - (Date.now() - start));
+    lbl.textContent = (left / 1000).toFixed(1);
+    if (left <= 0) {
+      clearInterval(timer);
+      btn.disabled = false;
+      btn.textContent = 'Continuar de todas formas';
+    }
+  }, 100);
+})();
+</script>`);
+}
+
 export function renderActionDone(token) {
   const t = encodeURIComponent(token);
   return shell("TaskFlow", `

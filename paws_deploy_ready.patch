@@ -1,0 +1,699 @@
+From 72d567d9df363a1a07fe92a56c90a9baf1a8d19a Mon Sep 17 00:00:00 2001
+From: Claude Sonnet 5 <noreply@anthropic.com>
+Date: Thu, 3 Sep 2026 06:34:53 +0000
+Subject: [PATCH 1/2] =?UTF-8?q?Activar=20la=20intervenci=C3=B3n=20PAWS=20p?=
+ =?UTF-8?q?or=20grupo=20(jolting)=20y=20corregir=20el=20parser=20CSV?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- group_assignment existía en el esquema desde el inicio pero ningún
+  endpoint lo leía: el grupo experimental recibía el mismo flujo que el
+  control, así que el sistema no podía producir evidencia para H1/H3
+  (Capítulo IX, §9.2).
+- GET /t/:token/d/:deliveryId/go ahora muestra la capa de intervención
+  (TG §8.2.5: pausa 1.5-2s, saliencia visual alternante, tono Web Audio,
+  cancelar/continuar) al grupo experimental, una vez por delivery. Nuevas
+  rutas POST /proceed y /cancel. Migración 003 agrega los event_type
+  'intervencion_mostrada' e 'intervencion_cancelada'.
+- Corrige POST /api/participants/import-csv: line.split(",") rompía
+  team_label con comas dentro de comillas.
+- 13/13 tests pasan contra Postgres 16 real (7 preexistentes + 6 nuevos).
+  Ver docs/2026-09-03_revision-8.2-cap-ix.md para el detalle completo.
+
+Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01JGQGHRHFwUMSTkPG5Dbbpj
+---
+ apps/api/src/lib/decoy.js                     |  77 ++++++++++
+ apps/api/src/routes/participants.js           |  29 +++-
+ apps/api/src/routes/tracking.js               |  60 +++++++-
+ .../tests/integration/intervention.test.js    | 136 +++++++++++++++++
+ .../integration/participants-csv.test.js      |  41 +++++
+ db/migrations/003_paws_intervention.sql       |  32 ++++
+ docs/2026-09-03_revision-8.2-cap-ix.md        | 140 ++++++++++++++++++
+ 7 files changed, 512 insertions(+), 3 deletions(-)
+ create mode 100644 apps/api/tests/integration/intervention.test.js
+ create mode 100644 apps/api/tests/integration/participants-csv.test.js
+ create mode 100644 db/migrations/003_paws_intervention.sql
+ create mode 100644 docs/2026-09-03_revision-8.2-cap-ix.md
+
+diff --git a/apps/api/src/lib/decoy.js b/apps/api/src/lib/decoy.js
+index e23c364..028b0f9 100644
+--- a/apps/api/src/lib/decoy.js
++++ b/apps/api/src/lib/decoy.js
+@@ -418,6 +418,83 @@ document.getElementById('f').addEventListener('submit',function(e){
+ </script>`);
+ }
+ 
++// Capa de intervención PAWS (jolting cognitivo, TG §8.2.5). Se muestra solo
++// al grupo experimental, una vez por delivery, antes del aterrizaje real:
++//  - Pausa obligatoria de 1,5-2 s (retraso racional / pause-before-action)
++//    durante la cual el botón "Continuar de todas formas" está inhabilitado.
++//  - Saliencia adaptativa: alterna dos estilos de alerta (fuente ampliada +
++//    contraste rojo, o icono con parpadeo) según el delivery, para no generar
++//    siempre el mismo estímulo y reducir la habituación.
++//  - Aviso sonoro breve (Web Audio API) al aparecer, sin hardware háptico.
++//  - "Cancelar" siempre disponible de inmediato: es la forma en que este
++//    prototipo de software revierte la acción de riesgo (no existe forma
++//    segura de bloquear el clic ya ejecutado, así que se previene el
++//    siguiente paso en vez de revertir uno ya hecho).
++export function renderJoltingInterstitial(token, { deliveryId }) {
++  const t = encodeURIComponent(token);
++  const d = encodeURIComponent(deliveryId);
++  // Alternancia determinista por delivery (misma idea que assignBalanced: no
++  // depender de Math.random para poder probarlo).
++  let h = 0; for (const c of String(deliveryId)) h = (h * 31 + c.charCodeAt(0)) >>> 0;
++  const salientStyle = h % 2 === 0 ? "scale" : "pulse";
++  const pauseMs = 1500 + (h % 6) * 100; // 1500-2000 ms, TG §8.2.5
++
++  return shell("Un momento", `
++<div class="plate">
++  <div class="sheet jolt jolt-${salientStyle}" role="alert" aria-live="assertive">
++    <div class="brand">${LOGO} TaskFlow</div>
++    <h1>⚠ Espera un momento antes de continuar</h1>
++    <p class="sub">Este enlace tiene características de un mensaje de riesgo (remitente, urgencia o solicitud inusual). Tómate un segundo para revisarlo.</p>
++    <ul style="margin:.9rem 0;padding-left:1.1rem;color:var(--ink-2);font-size:.9rem;line-height:1.6">
++      <li>¿Esperabas este mensaje?</li>
++      <li>¿El remitente es quien dice ser?</li>
++      <li>¿Te está apurando a actuar ya mismo?</li>
++    </ul>
++    <div style="display:flex;gap:.6rem;flex-wrap:wrap;margin-top:1.2rem">
++      <form method="POST" action="/t/${t}/d/${d}/cancel" style="margin:0">
++        <button class="btn ghost" type="submit">Cancelar y volver</button>
++      </form>
++      <form method="POST" action="/t/${t}/d/${d}/proceed" style="margin:0">
++        <button class="btn" type="submit" id="jolt-continue" disabled>Continuar de todas formas (<span id="jolt-count">${(pauseMs / 1000).toFixed(1)}</span>s)</button>
++      </form>
++    </div>
++    <p class="note">Ejercicio académico autorizado · esta pausa es intencional.</p>
++  </div>
++</div>
++<style>
++.jolt.jolt-scale h1{font-size:1.6rem;color:var(--warn)}
++.jolt.jolt-pulse h1{color:var(--warn);animation:joltpulse 1s ease-in-out infinite}
++@keyframes joltpulse{0%,100%{opacity:1}50%{opacity:.55}}
++.jolt{border:2px solid var(--warn)}
++</style>
++<script>
++(function(){
++  var ms = ${pauseMs};
++  var btn = document.getElementById('jolt-continue');
++  var lbl = document.getElementById('jolt-count');
++  try {
++    var Ctx = window.AudioContext || window.webkitAudioContext;
++    if (Ctx) {
++      var ctx = new Ctx(), osc = ctx.createOscillator(), gain = ctx.createGain();
++      osc.frequency.value = 660; gain.gain.value = 0.05;
++      osc.connect(gain); gain.connect(ctx.destination);
++      osc.start(); osc.stop(ctx.currentTime + 0.18);
++    }
++  } catch (e) {}
++  var start = Date.now();
++  var timer = setInterval(function(){
++    var left = Math.max(0, ms - (Date.now() - start));
++    lbl.textContent = (left / 1000).toFixed(1);
++    if (left <= 0) {
++      clearInterval(timer);
++      btn.disabled = false;
++      btn.textContent = 'Continuar de todas formas';
++    }
++  }, 100);
++})();
++</script>`);
++}
++
+ export function renderActionDone(token) {
+   const t = encodeURIComponent(token);
+   return shell("TaskFlow", `
+diff --git a/apps/api/src/routes/participants.js b/apps/api/src/routes/participants.js
+index 35ded64..7f8fcd4 100644
+--- a/apps/api/src/routes/participants.js
++++ b/apps/api/src/routes/participants.js
+@@ -69,7 +69,34 @@ participantsRouter.post("/import-csv", requireAdmin, async (req, res) => {
+   const lines = raw.split(/\r?\n/).filter((l) => l.trim() !== "");
+   if (lines.length < 2) return res.status(400).json({ error: "El CSV necesita una cabecera y al menos una fila" });
+ 
+-  const split = (line) => line.split(",").map((s) => s.trim().replace(/^"(.*)"$/, "$1"));
++  // Divide una línea CSV respetando comillas: un campo entre comillas puede
++  // contener comas (p.ej. un team_label como "Sistemas, turno tarde") y ""
++  // dentro de un campo entrecomillado es una comilla literal escapada. Un
++  // split(",") ingenuo cortaba esos campos en el punto equivocado.
++  const split = (line) => {
++    const out = [];
++    let cur = "";
++    let inQuotes = false;
++    for (let i = 0; i < line.length; i++) {
++      const c = line[i];
++      if (inQuotes) {
++        if (c === '"') {
++          if (line[i + 1] === '"') { cur += '"'; i++; } else { inQuotes = false; }
++        } else {
++          cur += c;
++        }
++      } else if (c === '"' && cur === "") {
++        inQuotes = true;
++      } else if (c === ",") {
++        out.push(cur.trim());
++        cur = "";
++      } else {
++        cur += c;
++      }
++    }
++    out.push(cur.trim());
++    return out;
++  };
+   const header = split(lines[0]).map((h) => h.toLowerCase());
+   const idx = (name) => header.indexOf(name);
+   if (idx("external_hash") === -1 || idx("role") === -1) {
+diff --git a/apps/api/src/routes/tracking.js b/apps/api/src/routes/tracking.js
+index 9f87c6a..3495bd8 100644
+--- a/apps/api/src/routes/tracking.js
++++ b/apps/api/src/routes/tracking.js
+@@ -4,6 +4,7 @@ import { buildSurveySchema, debriefText } from "../lib/survey.js";
+ import {
+   renderWelcome, renderApp, renderMessage, renderStimulusLanding,
+   renderActionDone, renderSurvey, renderDebrief, renderInvalid,
++  renderJoltingInterstitial,
+ } from "../lib/decoy.js";
+ 
+ export const trackingRouter = Router();
+@@ -17,7 +18,7 @@ async function loadPC(token) {
+   const r = await query(
+     `SELECT pc.id, pc.participant_id, pc.campaign_id, pc.access_token,
+             pc.session_started_at, pc.finished_at,
+-            p.consent_given,
++            p.consent_given, p.group_assignment,
+             c.name AS campaign_name, c.status AS campaign_status
+      FROM participant_campaign pc
+      JOIN participants p ON p.id = pc.participant_id
+@@ -28,6 +29,25 @@ async function loadPC(token) {
+   return r.rows[0] ?? null;
+ }
+ 
++// TG §8.2.5 / §9.2: solo el grupo 'experimental' recibe la capa de
++// intervención (jolting). 'control' y participantes sin grupo asignado (p.ej.
++// datos de campañas antiguas o importados sin group_assignment) mantienen el
++// flujo original, sin interstitial.
++function isExperimental(pc) {
++  return pc.group_assignment === "experimental";
++}
++
++// ¿Ya se le mostró la intervención a este delivery? Se muestra una sola vez
++// por estímulo: un jolt repetido en cada re-visita dejaría de sorprender
++// (habituación) y no es lo que describe §8.2.5.
++async function interventionAlreadyShown(deliveryId) {
++  const r = await query(
++    `SELECT 1 FROM events WHERE delivery_id = $1 AND event_type = 'intervencion_mostrada'`,
++    [deliveryId]
++  );
++  return r.rows.length > 0;
++}
++
+ async function loadDelivery(pcId, deliveryId) {
+   const r = await query(
+     `SELECT d.id AS delivery_id, d.delivered_at,
+@@ -144,12 +164,21 @@ trackingRouter.get("/:token/d/:deliveryId", async (req, res) => {
+   }));
+ });
+ 
+-// CTA del estímulo -> 'clic' + aterrizaje.
++// CTA del estímulo. Grupo control (o sin grupo): comportamiento original,
++// directo al aterrizaje. Grupo experimental, primera vez sobre este delivery:
++// se interpone la capa de intervención (jolting, TG §8.2.5) antes de dejar
++// pasar al aterrizaje o de permitir cancelar.
+ trackingRouter.get("/:token/d/:deliveryId/go", async (req, res) => {
+   const pc = await loadPC(req.params.token);
+   if (!pc) return res.status(404).set(HTML).send(renderInvalid());
+   const d = await loadDelivery(pc.id, req.params.deliveryId);
+   if (!pc.consent_given || !d || !d.is_attack) return res.redirect(`/t/${encodeURIComponent(pc.access_token)}/app`);
++
++  if (isExperimental(pc) && !(await interventionAlreadyShown(d.delivery_id))) {
++    await recordOnce(pc.id, d.delivery_id, "intervencion_mostrada", reactionMs(d.delivered_at));
++    return res.set(HTML).send(renderJoltingInterstitial(pc.access_token, { deliveryId: d.delivery_id }));
++  }
++
+   await recordOnce(pc.id, d.delivery_id, "abierto", reactionMs(d.delivered_at));
+   await recordOnce(pc.id, d.delivery_id, "clic", reactionMs(d.delivered_at));
+   res.set(HTML).send(renderStimulusLanding(pc.access_token, {
+@@ -157,6 +186,33 @@ trackingRouter.get("/:token/d/:deliveryId/go", async (req, res) => {
+   }));
+ });
+ 
++// El participante experimental sostiene la pausa obligatoria y decide
++// continuar de todas formas -> mismo registro y aterrizaje que el control.
++trackingRouter.post("/:token/d/:deliveryId/proceed", async (req, res) => {
++  const pc = await loadPC(req.params.token);
++  if (!pc) return res.status(404).set(HTML).send(renderInvalid());
++  const d = await loadDelivery(pc.id, req.params.deliveryId);
++  if (!pc.consent_given || !d || !d.is_attack) return res.redirect(`/t/${encodeURIComponent(pc.access_token)}/app`);
++  await recordOnce(pc.id, d.delivery_id, "abierto", reactionMs(d.delivered_at));
++  await recordOnce(pc.id, d.delivery_id, "clic", reactionMs(d.delivered_at));
++  res.set(HTML).send(renderStimulusLanding(pc.access_token, {
++    deliveryId: d.delivery_id, landing_kind: d.landing_kind || "form", landing_config: d.landing_config || {},
++  }));
++});
++
++// El participante experimental cancela desde la intervención -> se registra
++// como reversión de la acción de riesgo (TG §8.2.5, "bloquear o revertir") y
++// NUNCA se marca 'clic' ni 'abierto': para efectos de fell_for_attack, la
++// intervención evitó la caída.
++trackingRouter.post("/:token/d/:deliveryId/cancel", async (req, res) => {
++  const pc = await loadPC(req.params.token);
++  if (!pc) return res.status(404).set(HTML).send(renderInvalid());
++  const d = await loadDelivery(pc.id, req.params.deliveryId);
++  if (!d) return res.redirect(`/t/${encodeURIComponent(pc.access_token)}/app`);
++  await recordOnce(pc.id, d.delivery_id, "intervencion_cancelada", reactionMs(d.delivered_at));
++  res.redirect(`/t/${encodeURIComponent(pc.access_token)}/app`);
++});
++
+ trackingRouter.post("/:token/d/:deliveryId/submit", async (req, res) => {
+   const pc = await loadPC(req.params.token);
+   if (!pc) return res.status(404).json({ error: "Enlace no válido." });
+diff --git a/apps/api/tests/integration/intervention.test.js b/apps/api/tests/integration/intervention.test.js
+new file mode 100644
+index 0000000..7b296bb
+--- /dev/null
++++ b/apps/api/tests/integration/intervention.test.js
+@@ -0,0 +1,136 @@
++// Prueba de integración de la capa de intervención PAWS (jolting, TG §8.2.5)
++// y de su condición de activación por grupo (TG §9.2: control vs.
++// experimental). Antes de esta funcionalidad, `participants.group_assignment`
++// se guardaba pero ningún endpoint lo leía, así que el grupo experimental
++// recibía el mismo flujo que el control (ver Notion: "Cap. VIII/IX — activar
++// la intervención PAWS por grupo").
++//
++// Verifica que:
++//  - el grupo control (o sin grupo) sigue viendo el aterrizaje directo, sin
++//    interstitial (no debe romperse el comportamiento anterior);
++//  - el grupo experimental ve la intervención antes del aterrizaje, una sola
++//    vez por delivery;
++//  - "cancelar" registra 'intervencion_cancelada' y NO cuenta como caída
++//    (fell_for_attack = false), aunque el participante haya abierto el
++//    mensaje;
++//  - "continuar de todas formas" registra abierto+clic igual que el control
++//    y sí cuenta como caída.
++import { test, before, after } from "node:test";
++import assert from "node:assert/strict";
++import "dotenv/config";
++import { createApp } from "../../src/app.js";
++import { pool } from "../../src/db.js";
++
++process.env.NODE_ENV = "test";
++process.env.ADMIN_API_KEY = process.env.ADMIN_API_KEY || "test_key_local_only";
++
++let server, baseUrl;
++const key = process.env.ADMIN_API_KEY;
++const jh = { "x-api-key": key, "Content-Type": "application/json" };
++
++before(async () => { server = createApp().listen(0); baseUrl = `http://localhost:${server.address().port}`; });
++after(async () => { server.close(); await pool.end(); });
++
++async function api(method, path, body) {
++  const res = await fetch(`${baseUrl}${path}`, { method, headers: jh, body: body === undefined ? undefined : JSON.stringify(body) });
++  return { status: res.status, body: await res.json().catch(() => null) };
++}
++const hop = (path, opts = {}) => fetch(`${baseUrl}${path}`, { redirect: "manual", ...opts });
++const form = (path, data) => hop(path, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: data });
++
++// Crea plantilla + campaña + un participante del grupo dado, lo suscribe,
++// consiente, envía un ataque y devuelve { token, deliveryId, pcId }.
++async function setupAttackFor(groupAssignment) {
++  const t = await api("POST", "/api/templates", {
++    name: `Interv ${groupAssignment} ${Date.now()}`, vector: "urgencia", kind: "email", is_attack: true,
++    sender_label: "Seguridad", subject_or_headline: "Tu sesión expira", message_body: "<p>Verifica ya.</p>",
++    cta_label: "Verificar", landing_kind: "form",
++  });
++  const c = await api("POST", "/api/campaigns", { name: `CampInterv ${Date.now()}`, template_ids: [t.body.template.id] });
++  const campaignId = c.body.campaign.id;
++  const team = `EquipoInterv ${Date.now()}`;
++  const p = await api("POST", "/api/participants/import", {
++    participants: [{ external_hash: `interv_${groupAssignment}_${Date.now()}`, role: "estudiante", team_label: team, group_assignment: groupAssignment }],
++  });
++  const gen = await api("POST", `/api/campaigns/${campaignId}/generate-tokens`, { participant_ids: [p.body.participants[0].id] });
++  const token = gen.body.links[0].url.split("/").pop();
++  const msg = await api("POST", `/api/campaigns/${campaignId}/messages`, { template_id: t.body.template.id, kind: "email" });
++  await api("POST", `/api/messages/${msg.body.message.id}/send`, { team_labels: [team] });
++  await form(`/t/${token}/consent`, "consent=1");
++  const inboxHtml = await (await hop(`/t/${token}/app`)).text();
++  const deliveryId = inboxHtml.match(/\/t\/[^/]+\/d\/([0-9a-f-]{36})/)[1];
++  const pcId = (await pool.query(`SELECT id FROM participant_campaign WHERE access_token = $1`, [token])).rows[0].id;
++  return { token, deliveryId, pcId };
++}
++
++async function eventTypes(deliveryId) {
++  const r = await pool.query(`SELECT event_type FROM events WHERE delivery_id = $1 ORDER BY occurred_at`, [deliveryId]);
++  return r.rows.map((x) => x.event_type);
++}
++
++test("grupo control: /go sigue yendo directo al aterrizaje (sin interstitial)", async () => {
++  const { token, deliveryId } = await setupAttackFor("control");
++  const res = await hop(`/t/${token}/d/${deliveryId}/go`);
++  const html = await res.text();
++  assert.equal(res.status, 200);
++  assert.doesNotMatch(html, /Espera un momento antes de continuar/);
++  assert.match(html, /name="p"/); // aterrizaje form, como antes
++  assert.deepEqual(await eventTypes(deliveryId), ["entregado", "abierto", "clic"]);
++});
++
++test("participante sin grupo asignado (null): mismo comportamiento que control", async () => {
++  const { token, deliveryId } = await setupAttackFor(null);
++  const res = await hop(`/t/${token}/d/${deliveryId}/go`);
++  assert.doesNotMatch(await res.text(), /Espera un momento antes de continuar/);
++  assert.deepEqual(await eventTypes(deliveryId), ["entregado", "abierto", "clic"]);
++});
++
++test("grupo experimental: /go muestra la intervención antes del aterrizaje, una sola vez", async () => {
++  const { token, deliveryId } = await setupAttackFor("experimental");
++
++  const first = await hop(`/t/${token}/d/${deliveryId}/go`);
++  const html = await first.text();
++  assert.equal(first.status, 200);
++  assert.match(html, /Espera un momento antes de continuar/);
++  assert.match(html, /Cancelar y volver/);
++  assert.deepEqual(await eventTypes(deliveryId), ["entregado", "intervencion_mostrada"], "abrir el enlace no cuenta todavía como 'abierto'/'clic'");
++
++  // Revisitar el mismo enlace ya no debe repetir el interstitial.
++  const second = await hop(`/t/${token}/d/${deliveryId}/go`);
++  assert.doesNotMatch(await second.text(), /Espera un momento antes de continuar/);
++  assert.deepEqual(await eventTypes(deliveryId), ["entregado", "intervencion_mostrada", "abierto", "clic"]);
++});
++
++test("grupo experimental: cancelar registra la reversión y NO cuenta como caída", async () => {
++  const { token, deliveryId, pcId } = await setupAttackFor("experimental");
++  await hop(`/t/${token}/d/${deliveryId}/go`); // dispara el interstitial
++
++  const cancel = await hop(`/t/${token}/d/${deliveryId}/cancel`, { method: "POST" });
++  assert.equal(cancel.status, 302);
++  assert.match(cancel.headers.get("location"), /\/app$/);
++  assert.deepEqual(await eventTypes(deliveryId), ["entregado", "intervencion_mostrada", "intervencion_cancelada"]);
++
++  await hop(`/t/${token}/finish`, { method: "POST" });
++  await form(`/t/${token}/survey`,
++    "perceived_suspicion_before_action=true&recognized_as_simulated=false&fall_reason=no_aplica&vector_specific_answer=x");
++  const s = await pool.query(
++    `SELECT fell_for_attack FROM post_session_survey WHERE participant_campaign_id = $1`, [pcId]);
++  assert.equal(s.rows[0].fell_for_attack, false, "cancelar desde la intervención no debe registrarse como caída");
++});
++
++test("grupo experimental: continuar de todas formas registra abierto+clic igual que el control y sí cuenta como caída", async () => {
++  const { token, deliveryId, pcId } = await setupAttackFor("experimental");
++  await hop(`/t/${token}/d/${deliveryId}/go`); // dispara el interstitial
++
++  const proceed = await hop(`/t/${token}/d/${deliveryId}/proceed`, { method: "POST" });
++  assert.equal(proceed.status, 200);
++  assert.match(await proceed.text(), /name="p"/); // mismo aterrizaje que el control
++  assert.deepEqual(await eventTypes(deliveryId), ["entregado", "intervencion_mostrada", "abierto", "clic"]);
++
++  await hop(`/t/${token}/finish`, { method: "POST" });
++  await form(`/t/${token}/survey`,
++    "perceived_suspicion_before_action=false&recognized_as_simulated=false&fall_reason=urgencia_temporal&vector_specific_answer=x");
++  const s = await pool.query(
++    `SELECT fell_for_attack FROM post_session_survey WHERE participant_campaign_id = $1`, [pcId]);
++  assert.equal(s.rows[0].fell_for_attack, true, "continuar tras la intervención sí cuenta como caída, igual que el control");
++});
+diff --git a/apps/api/tests/integration/participants-csv.test.js b/apps/api/tests/integration/participants-csv.test.js
+new file mode 100644
+index 0000000..77f4e2a
+--- /dev/null
++++ b/apps/api/tests/integration/participants-csv.test.js
+@@ -0,0 +1,41 @@
++// El parser CSV de /api/participants/import-csv usaba line.split(","), que
++// corta un campo entrecomillado que contiene una coma (p.ej. un team_label
++// como "Sistemas, turno tarde") en el lugar equivocado. Esta prueba fija el
++// comportamiento correcto: los campos entre comillas se respetan, incluida
++// una coma dentro de ellos y una comilla escapada como "".
++import { test, before, after } from "node:test";
++import assert from "node:assert/strict";
++import "dotenv/config";
++import { createApp } from "../../src/app.js";
++import { pool } from "../../src/db.js";
++
++process.env.NODE_ENV = "test";
++process.env.ADMIN_API_KEY = process.env.ADMIN_API_KEY || "test_key_local_only";
++
++let server, baseUrl;
++const key = process.env.ADMIN_API_KEY;
++
++before(async () => { server = createApp().listen(0); baseUrl = `http://localhost:${server.address().port}`; });
++after(async () => { server.close(); await pool.end(); });
++
++test("import-csv respeta comas dentro de campos entrecomillados", async () => {
++  const h1 = `csv_${Date.now()}_a`;
++  const h2 = `csv_${Date.now()}_b`;
++  const csv =
++    `external_hash,role,team_label,group_assignment\n` +
++    `${h1},estudiante,"Sistemas, turno tarde",control\n` +
++    `${h2},estudiante,"Dicho ""oficial""",experimental\n`;
++
++  const res = await fetch(`${baseUrl}/api/participants/import-csv`, {
++    method: "POST",
++    headers: { "x-api-key": key, "Content-Type": "text/csv" },
++    body: csv,
++  });
++  const body = await res.json();
++  assert.equal(res.status, 201, JSON.stringify(body));
++  assert.equal(body.imported, 2);
++
++  const byHash = Object.fromEntries(body.participants.map((p) => [p.external_hash, p]));
++  assert.equal(byHash[h1].team_label, "Sistemas, turno tarde");
++  assert.equal(byHash[h2].team_label, 'Dicho "oficial"');
++});
+diff --git a/db/migrations/003_paws_intervention.sql b/db/migrations/003_paws_intervention.sql
+new file mode 100644
+index 0000000..92e9672
+--- /dev/null
++++ b/db/migrations/003_paws_intervention.sql
+@@ -0,0 +1,32 @@
++-- ============================================================================
++-- Migración 003 — Capa de intervención PAWS (jolting cognitivo, TG §8.2.5)
++-- Aplica sobre una base que ya tiene las migraciones 001 y 002.
++-- Ejecutar:  psql "$DATABASE_URL" -f db/migrations/003_paws_intervention.sql
++--
++-- Motivo: `participants.group_assignment` ('control' | 'experimental') existía
++-- en el esquema desde el inicio pero ningún endpoint lo leía todavía — el
++-- grupo experimental recibía exactamente el mismo flujo que el control, por
++-- lo que el sistema no podía todavía contrastar H1/H3 (Capítulo IX, §9.2).
++-- Esta migración solo agrega los dos tipos de evento que necesita el nuevo
++-- endpoint /t/:token/d/:deliveryId/go para registrar la intervención; no
++-- cambia ninguna tabla ni ningún dato existente.
++-- ============================================================================
++
++BEGIN;
++
++-- ALTER TYPE ... ADD VALUE no admite IF NOT EXISTS en todas las versiones;
++-- se envuelve para ser idempotente, igual que en la migración 001.
++DO $$ BEGIN
++  ALTER TYPE event_type ADD VALUE 'intervencion_mostrada';
++EXCEPTION WHEN duplicate_object THEN NULL; END $$;
++
++DO $$ BEGIN
++  ALTER TYPE event_type ADD VALUE 'intervencion_cancelada';
++EXCEPTION WHEN duplicate_object THEN NULL; END $$;
++
++COMMIT;
++
++-- NOTA: en PostgreSQL, un valor de enum agregado con ALTER TYPE ... ADD VALUE
++-- no puede usarse en la MISMA transacción en la que se agrega (limitación de
++-- Postgres, no de esta migración). Por eso el COMMIT va antes de que el
++-- código de la aplicación use 'intervencion_mostrada' / 'intervencion_cancelada'.
+diff --git a/docs/2026-09-03_revision-8.2-cap-ix.md b/docs/2026-09-03_revision-8.2-cap-ix.md
+new file mode 100644
+index 0000000..9f8d41c
+--- /dev/null
++++ b/docs/2026-09-03_revision-8.2-cap-ix.md
+@@ -0,0 +1,140 @@
++# Revisión técnica — sección 8.2 / Capítulo IX vs. repositorio PWAS
++
++Fecha: 2026-09-03. Contexto: revisión solicitada del repositorio
++`Nekoyanten/PWAS` contra la versión `v2` del trabajo de grado
++(`PAWS_Trabajo_de_grado_v2_8.2_y_CapIX.docx`), que reescribió la sección 8.2
++como "Diseño de ingeniería del sistema PAWS (Fase 1 implementable)" y agregó
++el Capítulo IX (diseño experimental). Este documento reemplaza el análisis
++anterior basado en la v1 de 8.2 (esa versión describía sensores PPG/GSR de
++hardware, ya reemplazados en v2 por una arquitectura 100 % de software).
++
++## 1. Qué construye hoy el repositorio
++
++`apps/api` es el **instrumento de captura del piloto de laboratorio** que
++describe el Capítulo IX: una app señuelo ("TaskFlow") con bandeja de
++mensajes, un panel admin para redactar/enviar campañas de phishing simulado
++sobre 5 vectores de influencia (autoridad, urgencia, escasez, prueba social,
++curiosidad), registro de eventos (entregado/abierto/clic/intento_envío/
++reportado/permiso_concedido), encuesta post-sesión y debriefing. La base de
++datos aplica correctamente las garantías de privacidad de TG §9.1 (Ley 1581
++de 2012): sin PII, sin credenciales reales, hash externo, agregación en el
++dashboard. Esto está bien construido y los 7 tests que ya existían pasan
++contra una base Postgres real.
++
++Lo que el repositorio **no era todavía** es el sistema PAWS de la sección
++8.2 en sí: el campo `participants.group_assignment` (`control` |
++`experimental`) existía en el esquema desde el principio, pero **ningún
++endpoint lo leía** — el grupo experimental recibía exactamente el mismo
++flujo que el control, así que el prototipo no podía todavía producir
++evidencia para H1/H3 (Capítulo IX, §9.2), que es la comparación central de
++todo el capítulo experimental.
++
++## 2. Mapeo Tabla 1 (§8.2.1) → repositorio
++
++| # | Módulo (Tabla 1) | Estado antes de hoy | Estado después de hoy |
++|---|---|---|---|
++| 1 | Captura (mousemove/click/keydown/keyup + timestamp, búfer 3-4s) | No implementado — solo un contador `usability_interactions` sin trayectoria ni timing | **Sigue pendiente** (ver §4) |
++| 2 | Preprocesamiento (resampleo, suavizado, z-score) | No implementado (depende de 1) | Pendiente |
++| 3 | Representación (AUC/SE/MD, latencias de tecleo; secuencias normalizadas) | No implementado (depende de 1-2) | Pendiente |
++| 4 | Inferencia (SVM/RF/XGBoost + TCN/BiLSTM → ONNX) | No implementado — es un pipeline offline en Python, fuera de este repo Express | Pendiente (workstream aparte) |
++| 5 | Motor de decisión (umbral de riesgo, activación condicional) | No implementado | **Parcial**: la intervención ahora se activa para todo clic en un mensaje de ataque del grupo experimental (simplificación honesta de Fase 1, ya que aún no existe un puntaje de riesgo en tiempo real que calcular) |
++| 6 | Intervención (jolting: pausa, alerta saliente, bloqueo/reversión) | **No implementado en absoluto** | **Implementado hoy** — ver §3 |
++| 7 | Almacenamiento (eventos, etiquetas, resultados) | Implementado para eventos gruesos; sin las etiquetas finas que piden 8.2.6/9.4 (duda, desliz vs. intencional por segmento) | Sin cambios — sigue faltando el etiquetado fino (depende de 1-3) |
++
++## 3. Lo que se implementó y se verificó en esta sesión
++
++**Capa de intervención PAWS (jolting cognitivo, TG §8.2.5)**, condicionada
++por `group_assignment`:
++
++- `db/migrations/003_paws_intervention.sql` agrega los eventos
++  `intervencion_mostrada` e `intervencion_cancelada` al enum `event_type`
++  (no toca ninguna tabla ni dato existente).
++- `GET /t/:token/d/:deliveryId/go`: el grupo **control** (o sin grupo
++  asignado) mantiene exactamente el comportamiento anterior. El grupo
++  **experimental**, la primera vez que abre un delivery de ataque, ve la
++  interstitial de intervención en lugar del aterrizaje directo.
++- Interstitial (`renderJoltingInterstitial` en `lib/decoy.js`): pausa
++  obligatoria de 1500-2000 ms (aleatoria por delivery, determinista vía
++  hash — no `Math.random()`, para que sea reproducible en pruebas) durante
++  la cual "Continuar de todas formas" está inhabilitado; alterna dos
++  estilos de saliencia visual (escala/parpadeo) según el delivery, para no
++  repetir siempre el mismo estímulo (§8.2.5, "saliencia adaptativa"); un
++  tono breve vía Web Audio API al aparecer; "Cancelar y volver" siempre
++  disponible de inmediato.
++- `POST /t/:token/d/:deliveryId/proceed`: continuar tras la intervención
++  registra `abierto`+`clic` igual que el control (y sí cuenta como caída).
++- `POST /t/:token/d/:deliveryId/cancel`: registra `intervencion_cancelada`
++  y **nunca** `clic` — es la forma en que este prototipo de software
++  "revierte" la acción de riesgo (no hay forma segura de deshacer un clic ya
++  ejecutado en el navegador del participante, así que se previene el
++  siguiente paso, que es la interpretación correcta de "bloqueo/reversión"
++  para una intervención puramente de interfaz).
++
++**Corrección de un bug real en `POST /api/participants/import-csv`**: el
++parser dividía cada línea con `line.split(",")`, así que un campo
++entrecomillado que contuviera una coma (p.ej. `team_label` = `"Sistemas,
++turno tarde"`) se cortaba en el lugar equivocado y arruinaba el resto de la
++fila. Se reemplazó por un splitter que respeta comillas (incluida `""` como
++comilla escapada). Confirmado con un test que falla contra el parser viejo
++(1 de 2 participantes importados correctamente) y pasa contra el nuevo.
++
++**Verificación real, no solo lectura de código**: se instaló PostgreSQL 16
++localmente (el sandbox no tenía Docker disponible), se cargó
++`db/schema.sql` + las 3 migraciones, y se corrió la suite completa
++(`npm test`) contra esa base antes y después de cada cambio.
++
++```
++tests 13
++pass 13
++fail 0
++```
++
++7 tests preexistentes (sin modificar su intención, solo se les agregó el
++evento `entregado` que ya emitía `/messages/:id/send` y que las pruebas
++nuevas debían tener en cuenta) + 5 tests nuevos de la intervención + 1 test
++nuevo del CSV.
++
++Todo esto vive en `paws_intervention_and_csv_fix.patch` (diff unificado)
++entregado junto a este documento — **no se hizo push al repositorio**
++porque esta sesión solo tiene acceso de lectura pública a
++`github.com/Nekoyanten/PWAS`; instrucciones de aplicación en el mensaje de
++entrega.
++
++## 4. Lo que sigue pendiente (por prioridad, para Notion)
++
++1. **Captura conductual real (módulo 1, §8.2.1 / §9.4)** — sin esto no hay
++   datos con los que entrenar ni evaluar ningún modelo de la sección 8.2.3
++   ni cumplir el protocolo de 8.2.6. Es el bloqueante más importante para
++   avanzar la investigación, más que cualquier otra pieza de este repo.
++2. **Paso 2 del protocolo — calibración (~30 s)** (TG §9.5): no existe hoy
++   ninguna pantalla ni ruta de calibración entre el consentimiento y la
++   tarea de navegación.
++3. **Asignación aleatoria a grupo** (TG §9.2, "diseño de dos grupos con
++   asignación aleatoria"): `group_assignment` se puede fijar manualmente al
++   importar participantes (uno por uno o por CSV), pero no hay ningún
++   endpoint que lo asigne aleatoriamente y balanceado — hoy depende de que
++   el investigador lo decida fuera del sistema. `lib/rng.js` ya tiene
++   exactamente el primitivo determinista (`assignBalanced`) que se usa para
++   repartir vectores por equipo; se podría reusar igual para grupos.
++4. **Dashboard sin comparación control vs. experimental**: `v_team_summary`
++   y `/api/dashboard/overview` agregan por equipo y por rol/vector, pero
++   ninguna vista agrega por `group_assignment` — sin eso no se puede leer
++   directamente la comparación que pide H1 (tasa de caída) ni H3 (tiempo de
++   decisión) del Capítulo IX. Es la extensión natural una vez recolectados
++   datos reales.
++5. **Pipeline de ML offline (módulos 3-4)**: SVM/RF/XGBoost + TCN/BiLSTM →
++   ONNX. Es explícitamente, según el propio documento, un workstream
++   independiente en Python fuera de esta API — no se intentó en esta
++   sesión.
++6. **Motor de decisión con umbral real (módulo 5)**: hoy la intervención se
++   activa para todo clic en ataque del grupo experimental; la versión final
++   de 8.2.5 la condiciona a un puntaje de riesgo calculado. Depende de 1 y
++   5.
++7. **Texto de consentimiento**: el checkbox actual ("He leído lo anterior y
++   acepto participar") es más genérico que lo que promete TG §9.1 (duración,
++   qué datos se recogen, derecho a retiro, referencia a la Ley 1581/Decreto
++   1377). No es un bug de código — es contenido a revisar con el comité de
++   ética antes del piloto real.
++
++Los ítems 1-7 se registraron en Notion (`PAWS - Proyecto de grado`) como
++filas de tipo *Pendiente*, en este mismo orden de prioridad.
+-- 
+2.43.0
+
+
+From 0b1c64030e35e036f66c2d629405b496c4547bf7 Mon Sep 17 00:00:00 2001
+From: Claude Sonnet 5 <noreply@anthropic.com>
+Date: Thu, 3 Sep 2026 07:43:06 +0000
+Subject: [PATCH 2/2] =?UTF-8?q?Detectar=20TLS=20autom=C3=A1ticamente=20en?=
+ =?UTF-8?q?=20la=20conexi=C3=B3n=20a=20Postgres=20(Supabase/Render)?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Supabase y Render exigen TLS para conectarse a Postgres; el Pool de `pg`
+no lo activaba, así que una vez desplegado el API fallaría al conectar
+contra la base de datos gestionada. Se detecta por el host en
+DATABASE_URL (o se fuerza con PGSSL=require|disable) para no romper el
+flujo local/tests, que sigue sin TLS.
+
+Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01JGQGHRHFwUMSTkPG5Dbbpj
+---
+ apps/api/src/db.js | 14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+diff --git a/apps/api/src/db.js b/apps/api/src/db.js
+index e9d5ab0..b538fe5 100644
+--- a/apps/api/src/db.js
++++ b/apps/api/src/db.js
+@@ -3,8 +3,22 @@ import "dotenv/config";
+ 
+ const { Pool } = pg;
+ 
++// Hosts administrados como Supabase/Render exigen TLS y no aceptan una
++// conexión en texto plano; Postgres local (desarrollo/tests) normalmente no
++// tiene TLS configurado y rompería si lo forzamos. PGSSL permite forzar el
++// valor explícitamente; si no se define, se detecta a partir del host en
++// DATABASE_URL para no romper el flujo local/tests existente.
++const databaseUrl = process.env.DATABASE_URL || "";
++const useSSL =
++  process.env.PGSSL === "require"
++    ? true
++    : process.env.PGSSL === "disable"
++    ? false
++    : /\.supabase\.co|\.render\.com/.test(databaseUrl);
++
+ export const pool = new Pool({
+   connectionString: process.env.DATABASE_URL,
++  ssl: useSSL ? { rejectUnauthorized: false } : false,
+ });
+ 
+ pool.on("error", (err) => {
+-- 
+2.43.0
+
