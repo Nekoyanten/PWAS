@@ -82,6 +82,7 @@ function onCampaignChange() {
   $("#campDetailPanel").hidden = false;
   $("#campDetailName").textContent = c.name;
   $("#campStatusBadge").textContent = c.status;
+  $("#joltingProb").value = c.jolting_probability ?? 1;
   loadLinks();
   loadPreflight();
   loadMessages();
@@ -223,6 +224,18 @@ $("#assignGroupsForceBtn").addEventListener("click", async () => {
   try { const r = await api("POST", `/api/campaigns/${CURRENT_CAMP}/assign-groups`, { force: true }); renderGroupsResult(r); await loadLinks(); }
   catch (e) { $("#groupsMsg").textContent = "Error: " + e.message; }
 });
+$("#saveJoltingBtn").addEventListener("click", async () => {
+  if (!CURRENT_CAMP) return alert("Elige una campaña en el paso 2.");
+  const probability = Number($("#joltingProb").value);
+  if (!Number.isFinite(probability) || probability < 0 || probability > 1) {
+    $("#joltingMsg").textContent = "Escribe un número entre 0 y 1.";
+    return;
+  }
+  $("#joltingMsg").textContent = "Guardando…";
+  try { await api("PATCH", `/api/campaigns/${CURRENT_CAMP}/jolting`, { probability }); await loadCampaigns();
+    $("#joltingMsg").textContent = `Probabilidad guardada: ${probability} ✓ (afecta a los mensajes que envíes desde ahora)`; }
+  catch (e) { $("#joltingMsg").textContent = "Error: " + e.message; }
+});
 async function setStatus(status) {
   try { await api("PATCH", `/api/campaigns/${CURRENT_CAMP}/status`, { status }); await loadCampaigns(); statusEl.textContent = `Campaña: ${status} ✓`; }
   catch (e) { alert(e.message); }
@@ -355,12 +368,13 @@ async function loadMessages() {
   const { messages } = await api("GET", `/api/campaigns/${CURRENT_CAMP}/messages`);
   $("#msgTable tbody").innerHTML = messages.map((m) => `<tr>
     <td>${esc(m.subject)}</td><td>${badge(m.vector, m.is_attack)}</td><td>${m.is_attack ? (VEC_LABEL[m.vector] || m.vector) : "—"}</td>
+    <td>${m.is_attack ? (m.jolting_enabled ? "puede salir" : "nunca") : "—"}</td>
     <td>${m.enviados}</td><td>${m.abiertos}</td><td>${m.clics}</td><td>${m.conversiones}</td><td>${m.reportes}</td>
     <td>
       <button class="btn-xs" data-send="${m.id}" data-subj="${esc(m.subject)}" data-atk="${m.is_attack}" data-vec="${esc(m.vector || "")}">enviar</button>
       <button class="btn-xs ghost" data-clone="${m.id}">clonar</button>
       <button class="btn-xs ghost" data-delmsg="${m.id}">borrar</button>
-    </td></tr>`).join("") || `<tr><td colspan="9" class="hint">Sin mensajes. Redacta uno arriba.</td></tr>`;
+    </td></tr>`).join("") || `<tr><td colspan="10" class="hint">Sin mensajes. Redacta uno arriba.</td></tr>`;
   $$("#msgTable [data-send]").forEach((b) => b.onclick = () => openSend(b.dataset));
   $$("#msgTable [data-clone]").forEach((b) => b.onclick = async () => { try { await api("POST", `/api/messages/${b.dataset.clone}/clone`); loadMessages(); } catch (e) { alert(e.message); } });
   $$("#msgTable [data-delmsg]").forEach((b) => b.onclick = async () => { if (confirm("¿Borrar mensaje y sus envíos?")) { try { await api("DELETE", `/api/messages/${b.dataset.delmsg}`); loadMessages(); loadPreflight(); } catch (e) { alert(e.message); } } });
@@ -371,11 +385,14 @@ $("#msgForm").addEventListener("submit", async (e) => {
   if (!CURRENT_CAMP) return alert("Elige una campaña en el paso 2.");
   const f = e.target;
   const isAttack = f.is_attack.value === "true";
+  // jolting_enabled solo tiene sentido para un mensaje de ataque, pero se
+  // manda igual en ambos casos: el backend lo ignora para relleno.
+  const joltingEnabled = f.jolting_enabled.checked;
   const payload = f.template_id.value
-    ? { template_id: f.template_id.value, kind: f.kind.value, subject: f.subject.value || undefined, sender_label: f.sender_label.value || undefined, body: f.body.value || undefined }
+    ? { template_id: f.template_id.value, kind: f.kind.value, subject: f.subject.value || undefined, sender_label: f.sender_label.value || undefined, body: f.body.value || undefined, jolting_enabled: joltingEnabled }
     : { kind: f.kind.value, is_attack: isAttack, vector: isAttack ? f.vector.value : undefined, sender_label: f.sender_label.value || null,
         subject: f.subject.value, body: f.body.value || null, cta_label: isAttack ? (f.cta_label.value || "Abrir") : undefined,
-        landing_kind: isAttack ? f.landing_kind.value : undefined };
+        landing_kind: isAttack ? f.landing_kind.value : undefined, jolting_enabled: joltingEnabled };
   try { await api("POST", `/api/campaigns/${CURRENT_CAMP}/messages`, payload); f.reset(); toggleMsgAttack(); loadMessages(); statusEl.textContent = "Mensaje guardado ✓"; }
   catch (err) { alert(err.message); }
 });

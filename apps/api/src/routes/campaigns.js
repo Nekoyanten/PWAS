@@ -74,6 +74,23 @@ campaignsRouter.patch("/:id/status", requireAdmin, async (req, res) => {
   res.json({ campaign: r.rows[0] });
 });
 
+// Migración 006: probabilidad (0..1) de que un mensaje con jolting_enabled
+// muestre el aviso de intervención al grupo experimental. Solo aplica a
+// envíos FUTUROS (mensajes que aún no se hayan enviado con /messages/:id/send)
+// — los deliveries ya creados guardan su propio sorteo fijo
+// (deliveries.jolting_roll) y no se recalculan al cambiar esto, por la misma
+// razón por la que no se re-asigna el grupo a media sesión: cambiar la regla
+// para datos ya recolectados invalidaría la medición.
+campaignsRouter.patch("/:id/jolting", requireAdmin, async (req, res) => {
+  const probability = Number(req.body?.probability);
+  if (!Number.isFinite(probability) || probability < 0 || probability > 1) {
+    return res.status(400).json({ error: "probability debe ser un número entre 0 y 1" });
+  }
+  const r = await query(`UPDATE campaigns SET jolting_probability = $1 WHERE id = $2 RETURNING *`, [probability, req.params.id]);
+  if (r.rows.length === 0) return res.status(404).json({ error: "Campaña no encontrada" });
+  res.json({ campaign: r.rows[0] });
+});
+
 // Genera un enlace de un solo uso por participante (sin estímulo todavía:
 // el estímulo se envía después como un "mensaje" desde la pestaña Mensajes).
 campaignsRouter.post("/:id/generate-tokens", requireAdmin, async (req, res) => {

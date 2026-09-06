@@ -74,16 +74,19 @@ CREATE TABLE templates (
 
 -- ----------------------------------------------------------------------------
 CREATE TABLE campaigns (
-  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  name           TEXT NOT NULL,
-  template_id    UUID REFERENCES templates(id),
-  seed           TEXT NOT NULL DEFAULT substr(md5(random()::text), 1, 12),
-  scheduled_at   TIMESTAMPTZ,
-  status         campaign_status NOT NULL DEFAULT 'borrador',
-  created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+  id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name                 TEXT NOT NULL,
+  template_id          UUID REFERENCES templates(id),
+  seed                 TEXT NOT NULL DEFAULT substr(md5(random()::text), 1, 12),
+  jolting_probability  NUMERIC(4,3) NOT NULL DEFAULT 1.000 CHECK (jolting_probability >= 0 AND jolting_probability <= 1),
+  scheduled_at         TIMESTAMPTZ,
+  status               campaign_status NOT NULL DEFAULT 'borrador',
+  created_at           TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 COMMENT ON COLUMN campaigns.seed IS
   'Semilla para sugerir un reparto balanceado y reproducible de vectores entre equipos (el admin puede seguirlo o no).';
+COMMENT ON COLUMN campaigns.jolting_probability IS
+  'Probabilidad (0..1) de que un envío de un mensaje con jolting_enabled=TRUE muestre el aviso "Espera un momento..." al grupo experimental (migración 006). 1.0 = siempre. No afecta al grupo control.';
 
 CREATE TABLE campaign_templates (
   campaign_id  UUID NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
@@ -113,21 +116,24 @@ CREATE INDEX idx_pc_token ON participant_campaign(access_token);
 -- Mensaje concreto de una campaña, redactado por el admin (desde una
 -- plantilla o desde cero). Se envía a uno o varios equipos.
 CREATE TABLE messages (
-  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  campaign_id    UUID NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
-  template_id    UUID REFERENCES templates(id),
-  kind           message_kind NOT NULL DEFAULT 'email',
-  is_attack      BOOLEAN NOT NULL DEFAULT FALSE,
-  vector         attack_vector,                 -- copia del vector de la plantilla (para métricas), NULL si no es ataque
-  sender_label   TEXT,
-  subject        TEXT NOT NULL,
-  body           TEXT,
-  cta_label      TEXT,
-  landing_kind   landing_kind,
-  landing_config JSONB NOT NULL DEFAULT '{}'::jsonb,
-  created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  campaign_id     UUID NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+  template_id     UUID REFERENCES templates(id),
+  kind            message_kind NOT NULL DEFAULT 'email',
+  is_attack       BOOLEAN NOT NULL DEFAULT FALSE,
+  vector          attack_vector,                 -- copia del vector de la plantilla (para métricas), NULL si no es ataque
+  sender_label    TEXT,
+  subject         TEXT NOT NULL,
+  body            TEXT,
+  cta_label       TEXT,
+  landing_kind    landing_kind,
+  landing_config  JSONB NOT NULL DEFAULT '{}'::jsonb,
+  jolting_enabled BOOLEAN NOT NULL DEFAULT TRUE,  -- migración 006: si es FALSE, este mensaje nunca muestra el aviso de intervención, a nadie
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX idx_messages_campaign ON messages(campaign_id);
+COMMENT ON COLUMN messages.jolting_enabled IS
+  'Si es FALSE, este mensaje de ataque NUNCA muestra el aviso "Espera un momento...", para ningún participante ni grupo (migración 006).';
 
 -- Cada envío de un mensaje a un participante. Reenviar el mismo estímulo =
 -- un mensaje nuevo con su propia tanda de deliveries -> se mide por separado.
@@ -136,8 +142,11 @@ CREATE TABLE deliveries (
   message_id              UUID NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
   participant_campaign_id UUID NOT NULL REFERENCES participant_campaign(id) ON DELETE CASCADE,
   delivered_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
+  jolting_roll            BOOLEAN NOT NULL DEFAULT TRUE,  -- migración 006: sorteo fijo (sembrado) contra campaigns.jolting_probability, calculado una sola vez al crear el delivery
   UNIQUE (message_id, participant_campaign_id)
 );
+COMMENT ON COLUMN deliveries.jolting_roll IS
+  'Resultado fijo del sorteo de probabilidad (campaigns.jolting_probability), sembrado con seed+message_id+participant_campaign_id (migración 006). Junto con messages.jolting_enabled y group_assignment=''experimental'' decide si tracking.js muestra la intervención.';
 CREATE INDEX idx_deliveries_pc ON deliveries(participant_campaign_id);
 
 -- ----------------------------------------------------------------------------

@@ -30,12 +30,29 @@ async function loadPC(token) {
   return r.rows[0] ?? null;
 }
 
-// TG §8.2.5 / §9.2: solo el grupo 'experimental' recibe la capa de
-// intervención (jolting). 'control' y participantes sin grupo asignado (p.ej.
-// datos de campañas antiguas o importados sin group_assignment) mantienen el
-// flujo original, sin interstitial.
+// TG §8.2.5 / §9.2: solo el grupo 'experimental' es CANDIDATO a recibir la
+// capa de intervención (jolting). 'control' y participantes sin grupo
+// asignado (p.ej. datos de campañas antiguas o importados sin
+// group_assignment) mantienen el flujo original, sin interstitial, siempre.
 function isExperimental(pc) {
   return pc.group_assignment === "experimental";
+}
+
+// Migración 006 — adaptatividad: ser del grupo experimental ya NO basta por
+// sí solo para ver el aviso. También hace falta que:
+//   (a) el propio mensaje lo permita (messages.jolting_enabled) — el admin
+//       puede marcar un ataque como "silencioso" y entonces nunca lo
+//       muestra, a nadie; y
+//   (b) el sorteo de ESTE envío haya salido positivo (deliveries.jolting_roll,
+//       fijado una sola vez al enviarlo — ver rollJolting() en messages.js).
+// Antes de esta migración (a) y (b) no existían y el resultado para
+// experimental era "siempre sí"; ahora depende de campaigns.jolting_probability.
+// Sin este control de variabilidad, todo el grupo experimental ve el aviso
+// en el 100% de los ataques y lo que se termina midiendo es "¿ignora una
+// advertencia explícita?" en vez de "¿cae en el engaño en condiciones
+// realistas?" — exactamente la limitación que motivó este cambio.
+function joltingEligible(pc, d) {
+  return isExperimental(pc) && d.jolting_enabled === true && d.jolting_roll === true;
 }
 
 // ¿Ya se le mostró la intervención a este delivery? Se muestra una sola vez
@@ -51,9 +68,9 @@ async function interventionAlreadyShown(deliveryId) {
 
 async function loadDelivery(pcId, deliveryId) {
   const r = await query(
-    `SELECT d.id AS delivery_id, d.delivered_at,
+    `SELECT d.id AS delivery_id, d.delivered_at, d.jolting_roll,
             m.id AS message_id, m.kind, m.is_attack, m.vector, m.sender_label,
-            m.subject, m.body, m.cta_label, m.landing_kind, m.landing_config
+            m.subject, m.body, m.cta_label, m.landing_kind, m.landing_config, m.jolting_enabled
      FROM deliveries d JOIN messages m ON m.id = d.message_id
      WHERE d.id = $1 AND d.participant_campaign_id = $2`,
     [deliveryId, pcId]
@@ -226,17 +243,19 @@ trackingRouter.get("/:token/d/:deliveryId", async (req, res) => {
   }));
 });
 
-// CTA del estímulo. Grupo control (o sin grupo): comportamiento original,
-// directo al aterrizaje. Grupo experimental, primera vez sobre este delivery:
-// se interpone la capa de intervención (jolting, TG §8.2.5) antes de dejar
-// pasar al aterrizaje o de permitir cancelar.
+// CTA del estímulo. Grupo control (o sin grupo), o mensaje/sorteo no
+// elegible (joltingEligible() = false): comportamiento original, directo al
+// aterrizaje. Grupo experimental + mensaje con jolting_enabled + sorteo
+// positivo, primera vez sobre este delivery: se interpone la capa de
+// intervención (jolting, TG §8.2.5) antes de dejar pasar al aterrizaje o de
+// permitir cancelar.
 trackingRouter.get("/:token/d/:deliveryId/go", async (req, res) => {
   const pc = await loadPC(req.params.token);
   if (!pc) return res.status(404).set(HTML).send(renderInvalid());
   const d = await loadDelivery(pc.id, req.params.deliveryId);
   if (!pc.consent_given || !d || !d.is_attack) return res.redirect(`/t/${encodeURIComponent(pc.access_token)}/app`);
 
-  if (isExperimental(pc) && !(await interventionAlreadyShown(d.delivery_id))) {
+  if (joltingEligible(pc, d) && !(await interventionAlreadyShown(d.delivery_id))) {
     await recordOnce(pc.id, d.delivery_id, "intervencion_mostrada", reactionMs(d.delivered_at));
     return res.set(HTML).send(renderJoltingInterstitial(pc.access_token, { deliveryId: d.delivery_id }));
   }

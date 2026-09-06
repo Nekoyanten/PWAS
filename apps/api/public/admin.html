@@ -107,6 +107,16 @@ p04,directivo,Equipo 2"></textarea>
           <span id="groupsMsg" class="hint"></span>
         </div>
 
+        <h3>Aviso "Espera un momento…" (intervención adaptativa)</h3>
+        <p class="hint">Probabilidad de que un <strong>envío</strong> de un mensaje de ataque con el aviso activado se lo muestre al grupo experimental. <code>1</code> = siempre (como antes); <code>0</code> = nunca. Un valor intermedio (p. ej. <code>0.4</code>) hace que salga solo en una parte de los envíos, para poder medir si la gente realmente cae en el engaño y no solo si obedece una advertencia explícita. El grupo control nunca lo ve, sin importar este valor. Cada envío ya hecho conserva su propio sorteo — cambiar esto solo afecta a los mensajes que envíes después.</p>
+        <div class="form-actions">
+          <label>Probabilidad (0 – 1)
+            <input id="joltingProb" type="number" min="0" max="1" step="0.05" style="width:90px;padding:.4rem .5rem;border:1px solid #cbd3e1;border-radius:6px;margin-left:.4rem">
+          </label>
+          <button id="saveJoltingBtn" class="btn-sm ghost">Guardar probabilidad</button>
+          <span id="joltingMsg" class="hint"></span>
+        </div>
+
         <h3>Verificación previa a la sesión</h3>
         <ul class="checklist" id="preflight"><li><span class="mark">·</span> Conecta y elige una campaña.</li></ul>
         <div id="preflightVerdict"></div>
@@ -202,13 +212,16 @@ p04,directivo,Equipo 2"></textarea>
           <label class="full">Cuerpo<textarea name="body" rows="3"></textarea></label>
           <label class="msgatk">Texto del botón<input name="cta_label"></label>
           <label class="msgatk">Página trampa<select name="landing_kind"><option value="form">form</option><option value="permiso">permiso</option></select></label>
+          <label class="msgatk full"><input type="checkbox" name="jolting_enabled" checked style="width:auto;margin-right:.4rem">
+            Puede mostrar el aviso "Espera un momento…" <span class="help">Si lo destildas, este mensaje nunca lo muestra a nadie (ni al grupo experimental), sin importar la probabilidad de la campaña — úsalo para un ataque "silencioso". Si queda marcado, todavía depende de la probabilidad de la campaña (arriba, paso 2) y del grupo.</span>
+          </label>
           <div class="full form-actions"><button type="submit" class="btn-sm">Guardar el mensaje (aún no lo envía)</button></div>
         </form>
       </div>
 
       <div class="panel">
         <h2>Mensajes guardados en esta campaña</h2>
-        <table id="msgTable"><thead><tr><th>Asunto</th><th>Tipo</th><th>Técnica</th><th>Enviados</th><th>Abiertos</th><th>Clics</th><th>Cayeron</th><th>Reportes</th><th></th></tr></thead><tbody></tbody></table>
+        <table id="msgTable"><thead><tr><th>Asunto</th><th>Tipo</th><th>Técnica</th><th>Aviso</th><th>Enviados</th><th>Abiertos</th><th>Clics</th><th>Cayeron</th><th>Reportes</th><th></th></tr></thead><tbody></tbody></table>
       </div>
 
       <div class="panel" id="sendPanel" hidden>
