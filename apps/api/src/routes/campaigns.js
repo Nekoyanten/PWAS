@@ -107,6 +107,60 @@ campaignsRouter.post("/:id/generate-tokens", requireAdmin, async (req, res) => {
   res.status(201).json({ generated: created.length, links: created.map((x) => ({ participant_id: x.participant_id, url: `/t/${x.access_token}` })) });
 });
 
+// Asignación balanceada y reproducible de group_assignment (control/
+// experimental) — TG §9.2. Hoy el grupo se fija a mano al importar
+// participantes (uno por uno o por CSV); este endpoint reutiliza el mismo
+// mecanismo que ya reparte el vector de ataque por equipo (`assignBalanced`,
+// lib/rng.js) para repartir el grupo, evitando: (a) sesgo — todo el mundo con
+// el mismo criterio manual termina en el mismo grupo — y (b) que dos personas
+// corran esto y obtengan repartos distintos para la misma campaña.
+//
+// group_assignment vive en `participants` (no en `participant_campaign`):
+// es un atributo de la persona, no de su paso por esta campaña en concreto.
+// Por eso este endpoint es deliberadamente conservador en dos sentidos:
+//  1. Por defecto SOLO asigna a quienes tienen group_assignment NULL — no
+//     pisa un grupo puesto a mano (import CSV/JSON), salvo que se pida
+//     force:true explícitamente.
+//  2. Nunca reasigna a alguien cuya sesión en ESTA campaña ya empezó
+//     (`participant_campaign.session_started_at`), ni con force:true —
+//     cambiarle el grupo a mitad o después de la prueba invalidaría los
+//     datos ya recolectados (p.ej. si ya vio o no la intervención jolting).
+campaignsRouter.post("/:id/assign-groups", requireAdmin, async (req, res) => {
+  const campaignId = req.params.id;
+  const force = req.body?.force === true;
+  const c = await query(`SELECT seed FROM campaigns WHERE id = $1`, [campaignId]);
+  if (c.rows.length === 0) return res.status(404).json({ error: "Campaña no encontrada" });
+
+  const rows = await query(
+    `SELECT p.id AS participant_id, p.group_assignment, pc.session_started_at
+     FROM participant_campaign pc JOIN participants p ON p.id = pc.participant_id
+     WHERE pc.campaign_id = $1
+     ORDER BY p.id`,
+    [campaignId]
+  );
+
+  const bloqueados = rows.rows.filter((r) => r.session_started_at !== null);
+  const disponibles = rows.rows.filter((r) => r.session_started_at === null);
+  const elegibles = disponibles.filter((r) => force || r.group_assignment === null);
+  const yaAsignados = disponibles.length - elegibles.length;
+
+  let resumen = { control: 0, experimental: 0 };
+  if (elegibles.length > 0) {
+    const assigned = assignBalanced(["control", "experimental"], elegibles.length, `${c.rows[0].seed}:${campaignId}:group`);
+    for (let i = 0; i < elegibles.length; i++) {
+      await query(`UPDATE participants SET group_assignment = $1 WHERE id = $2`, [assigned[i], elegibles[i].participant_id]);
+      resumen[assigned[i]]++;
+    }
+  }
+
+  res.json({
+    asignados: elegibles.length,
+    resumen,
+    omitidos_ya_asignados: yaAsignados,
+    omitidos_por_sesion_iniciada: bloqueados.length,
+  });
+});
+
 // Equipos de la campaña (para elegir destinatarios al enviar un mensaje).
 campaignsRouter.get("/:id/teams", requireAdmin, async (req, res) => {
   const r = await query(
