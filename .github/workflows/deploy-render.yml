@@ -1,0 +1,34 @@
+name: Desplegar en Render
+
+# Por qué existe esto: el servicio de Render está configurado con
+# autoDeploy=yes, pero en la práctica el webhook de GitHub -> Render nunca
+# ha disparado un solo deploy automático desde que se creó el servicio
+# (revisado el historial completo de deploys: TODOS fueron "api" o
+# "manual", ninguno "webhook"). En vez de seguir dependiendo de que alguien
+# note el problema y dispare el deploy a mano cada vez, este workflow llama
+# directo al "Deploy Hook" de Render en cada push a main — no depende en
+# absoluto de que la integración nativa GitHub<->Render funcione.
+#
+# Para activarlo (una sola vez):
+#   1. En el dashboard de Render: este servicio -> Settings -> Deploy Hook
+#      -> copiar la URL (empieza con https://api.render.com/deploy/...).
+#   2. En GitHub: Settings -> Secrets and variables -> Actions -> New
+#      repository secret -> nombre RENDER_DEPLOY_HOOK_URL, valor la URL
+#      copiada.
+#   3. Listo. Desde el próximo push a main, este workflow se encarga.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Disparar el Deploy Hook de Render
+        run: |
+          if [ -z "${{ secrets.RENDER_DEPLOY_HOOK_URL }}" ]; then
+            echo "::error::Falta el secreto RENDER_DEPLOY_HOOK_URL. Ver los comentarios de este archivo para configurarlo."
+            exit 1
+          fi
+          curl -fsS -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}"
