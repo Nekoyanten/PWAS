@@ -14,6 +14,18 @@ function sanitizeMessageHtml(html) {
     .replace(/\n/g, "<br>");
 }
 
+// Etiqueta <script> que activa apps/api/public/js/behavior-capture.js en
+// una pantalla del participante (Tabla 1 §8.2.1, fila 1). `phase` identifica
+// qué pantalla es para el análisis posterior; `deliveryId` (opcional) ata la
+// captura a un mensaje/ataque concreto cuando aplica (mensaje, landing).
+// Un solo lugar para esto: agregar una fase nueva más adelante (p.ej. el
+// debrief) es una línea acá, no cuatro copias del mismo <script> repetidas.
+function behaviorCaptureTag(token, phase, deliveryId) {
+  const attrs = [`data-token="${escapeHtml(token)}"`, `data-phase="${escapeHtml(phase)}"`];
+  if (deliveryId) attrs.push(`data-delivery-id="${escapeHtml(deliveryId)}"`);
+  return `<script src="/js/behavior-capture.js" ${attrs.join(" ")}></script>`;
+}
+
 function shell(title, bodyHtml, opts = {}) {
   return `<!doctype html><html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -581,7 +593,8 @@ function tfBoard(){
   tf_iv=setInterval(tick,3000);
   document.addEventListener('visibilitychange',function(){ if(!document.hidden) tick(); });
 })();
-</script>`, {
+</script>
+${behaviorCaptureTag(token, "app")}`, {
     head: `<script defer src="/vendor/alpine.min.js"></script>`,
     extraCss: `
 [x-cloak]{display:none!important}
@@ -661,7 +674,8 @@ export function renderMessage(token, msg) {
       </div>
     </div>
   </div>
-</div>`);
+</div>
+${behaviorCaptureTag(token, "message", msg.deliveryId)}`);
 }
 
 export function renderStimulusLanding(token, delivery) {
@@ -701,7 +715,8 @@ export function renderStimulusLanding(token, delivery) {
     </div>
   </div>
 </div>
-<p class="note" style="text-align:center;margin-top:1rem">Ejercicio académico · no se accede realmente a ninguna cuenta ni recurso.</p>`);
+<p class="note" style="text-align:center;margin-top:1rem">Ejercicio académico · no se accede realmente a ninguna cuenta ni recurso.</p>
+${behaviorCaptureTag(token, "landing", delivery.deliveryId)}`);
   }
 
   const cfg = delivery.landing_config || {};
@@ -726,7 +741,8 @@ document.getElementById('f').addEventListener('submit',function(e){
   fetch('/t/${t}/d/${d}/submit',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})
    .then(function(){location.href='/t/${t}/action-done'});
 });
-</script>`);
+</script>
+${behaviorCaptureTag(token, "landing", delivery.deliveryId)}`);
 }
 
 // Capa de intervención PAWS (jolting cognitivo, TG §8.2.5). Se muestra solo
@@ -862,7 +878,8 @@ export function renderSurvey(token, schema) {
       <button class="btn block" type="submit">Enviar respuestas</button>
     </form>
   </div>
-</div>`);
+</div>
+${behaviorCaptureTag(token, "survey")}`);
 }
 
 export function renderDebrief(html) {

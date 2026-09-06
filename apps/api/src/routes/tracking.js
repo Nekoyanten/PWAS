@@ -278,6 +278,108 @@ trackingRouter.post("/:token/usability", async (req, res) => {
   res.status(204).end();
 });
 
+// ---------------------------------------------------------------------------
+// Captura conductual real (Tabla 1 §8.2.1, fila 1). Ver apps/api/public/js/
+// behavior-capture.js para qué envía el navegador y por qué, y la migración
+// 004_behavior_capture.sql para el esquema. Este endpoint solo valida y
+// guarda: no calcula nada (el preprocesamiento es un workstream aparte).
+//
+// Deliberadamente NO usa recordOnce/dedup como el resto de este archivo: acá
+// SÍ queremos cada muestra, son la señal en sí, no un evento de negocio.
+const BEHAVIOR_EVENT_TYPES = new Set([
+  "mousemove", "mousedown", "mouseup", "click",
+  "keydown", "keyup",
+  "visibility_hidden", "visibility_visible",
+]);
+const BEHAVIOR_MAX_SAMPLES_PER_REQUEST = 300; // debe calzar con MAX_SAMPLES_PER_REQUEST en behavior-capture.js.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// Clampea a un entero dentro de [min, max], o null si no es un número válido.
+// Los SMALLINT de behavior_events (x, y) truenan con un INSERT fuera de rango
+// en vez de guardar un valor cualquiera; mejor perder un campo que la fila
+// entera por un valor absurdo que mande el navegador (o un cliente hostil).
+function clampInt(v, min, max) {
+  const n = Math.round(Number(v));
+  if (!Number.isFinite(n)) return null;
+  return Math.min(max, Math.max(min, n));
+}
+
+function sanitizeSample(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  if (!BEHAVIOR_EVENT_TYPES.has(raw.type)) return null;
+  const t = clampInt(raw.t, 0, 24 * 60 * 60 * 1000); // tope generoso de 24h; descarta basura sin bloquear el resto del lote.
+  if (t === null) return null;
+  return {
+    t_ms: t,
+    event_type: raw.type,
+    x: raw.x === undefined ? null : clampInt(raw.x, -32768, 32767),
+    y: raw.y === undefined ? null : clampInt(raw.y, -32768, 32767),
+    key_code: typeof raw.code === "string" ? raw.code.slice(0, 40) : null,
+  };
+}
+
+// INSERT multi-fila en una sola ida a la base — con lotes de hasta 300
+// muestras por request, una fila a la vez sería 300 round-trips por flush.
+const BEHAVIOR_EVENT_COLUMNS = 6; // behavior_session_id, t_ms, event_type, x, y, key_code
+
+async function insertBehaviorEvents(sessionId, samples) {
+  const values = [];
+  const placeholders = samples.map((s, i) => {
+    const base = i * BEHAVIOR_EVENT_COLUMNS;
+    values.push(sessionId, s.t_ms, s.event_type, s.x, s.y, s.key_code);
+    return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6})`;
+  });
+  await query(
+    `INSERT INTO behavior_events (behavior_session_id, t_ms, event_type, x, y, key_code)
+     VALUES ${placeholders.join(", ")}`,
+    values
+  );
+}
+
+trackingRouter.post("/:token/behavior", async (req, res) => {
+  const pc = await loadPC(req.params.token);
+  if (!pc) return res.status(204).end(); // mismo criterio que /usability: un token vencido no debe romper la página del participante.
+
+  const body = req.body ?? {};
+  if (!UUID_RE.test(body.session_id || "")) return res.status(400).json({ error: "session_id inválido" });
+  if (typeof body.phase !== "string" || !body.phase) return res.status(400).json({ error: "phase requerido" });
+  if (!Array.isArray(body.samples) || body.samples.length === 0) return res.status(400).json({ error: "samples requerido" });
+  if (body.samples.length > BEHAVIOR_MAX_SAMPLES_PER_REQUEST) {
+    return res.status(400).json({ error: `máximo ${BEHAVIOR_MAX_SAMPLES_PER_REQUEST} muestras por request` });
+  }
+  const deliveryId = typeof body.delivery_id === "string" && UUID_RE.test(body.delivery_id) ? body.delivery_id : null;
+
+  const samples = body.samples.map(sanitizeSample).filter(Boolean);
+  if (samples.length === 0) return res.status(400).json({ error: "ninguna muestra válida en el lote" });
+
+  try {
+    // La sesión la crea el NAVEGADOR (session_id viene armado desde el
+    // cliente) — el servidor solo la registra la primera vez que la ve.
+    // Un delivery_id que no pertenezca a este participante simplemente no
+    // hace match en el JOIN de análisis después; no hace falta validarlo
+    // aquí porque no se usa para autorizar nada, solo es metadata.
+    await query(
+      `INSERT INTO behavior_sessions (id, participant_campaign_id, delivery_id, phase, viewport_w, viewport_h, sample_count)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       ON CONFLICT (id) DO UPDATE SET
+         last_flush_at = now(),
+         sample_count = behavior_sessions.sample_count + EXCLUDED.sample_count`,
+      [
+        body.session_id, pc.id, deliveryId, body.phase.slice(0, 40),
+        clampInt(body.viewport_w, 0, 32767), clampInt(body.viewport_h, 0, 32767),
+        samples.length,
+      ]
+    );
+    await insertBehaviorEvents(body.session_id, samples);
+    res.status(204).end();
+  } catch (err) {
+    // Un session_id repetido con datos de otro participante (colisión de
+    // UUID) es prácticamente imposible; cualquier otro error de validación
+    // que se nos haya escapado cae acá como 400, no como 500.
+    res.status(400).json({ error: "lote inválido", detail: err.message });
+  }
+});
+
 trackingRouter.post("/:token/finish", async (req, res) => {
   const pc = await loadPC(req.params.token);
   if (!pc) return res.status(404).set(HTML).send(renderInvalid());
