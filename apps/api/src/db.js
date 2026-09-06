@@ -36,3 +36,28 @@ export async function query(text, params) {
   }
   return res;
 }
+
+// `query()` de arriba usa el pool directamente: cada llamada puede tomar un
+// cliente/conexión distinto, lo cual está bien para consultas sueltas pero
+// es incorrecto en cuanto una operación necesita leer y luego escribir de
+// forma atómica (p.ej. un advisory lock, o un "leer N filas -> decidir ->
+// escribir las N" que no debe entrelazarse con otra llamada concurrente a lo
+// mismo). `withTransaction` reserva UN solo cliente del pool, corre `fn`
+// dentro de BEGIN/COMMIT (ROLLBACK si `fn` lanza), y siempre libera el
+// cliente al final. `fn` recibe ese cliente y debe usar `client.query(...)`
+// para TODAS sus consultas — mezclar con el `query()` de arriba dentro de
+// una transacción rompería la garantía, porque iría a otra conexión.
+export async function withTransaction(fn) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const result = await fn(client);
+    await client.query("COMMIT");
+    return result;
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+}

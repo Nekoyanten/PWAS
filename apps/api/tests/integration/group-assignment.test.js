@@ -21,6 +21,11 @@
 //    invalidaría los datos que ya se estén recolectando;
 //  - no toca participantes de otra campaña ni el pool general de
 //    `participants` fuera de esta campaña;
+//  - dos llamadas concurrentes sobre la MISMA campaña se serializan de
+//    verdad vía un advisory lock de Postgres (probado con dos clientes
+//    reales controlando el COMMIT a mano, no con Promise.all + HTTP, que
+//    resultó no ser confiable para reproducir la carrera — ver comentario
+//    en esa prueba);
 //  - exige x-api-key, igual que el resto de /api/campaigns;
 //  - 404 si la campaña no existe.
 import { test, before, after } from "node:test";
@@ -193,6 +198,105 @@ test("responde asignados:0 sin romper si ya no queda nadie por asignar", async (
   assert.equal(res2.status, 200);
   assert.equal(res2.body.asignados, 0);
   assert.equal(res2.body.omitidos_ya_asignados, 3);
+});
+
+// La prueba anterior de este archivo intentaba probar el advisory lock
+// disparando dos POST concurrentes con Promise.all() y esperando que una
+// viera asignados:0. Se descartó a propósito: se comprobó (quitando el lock
+// a mano y volviendo a correrla) que PASABA IGUAL sin el lock, porque dos
+// fetch() de ida y vuelta por HTTP casi nunca llegan a solaparse justo en la
+// ventana de la carrera — el tiempo de red por sí solo ya alcanza a
+// serializarlas la mayoría de las veces. Una prueba que "pasa" tanto con el
+// bug como con el fix no prueba nada; queda este comentario para que nadie
+// la vuelva a agregar pensando que sí sirve.
+//
+// En su lugar, se prueba el mecanismo de bajo nivel directamente con dos
+// clientes de Postgres reales, controlando a mano cuándo cada uno hace
+// COMMIT — así el solape es determinista, no depende de timing de red.
+test("el advisory lock realmente bloquea: una segunda transacción sobre la misma campaña espera a que la primera termine", async () => {
+  const stamp = Date.now();
+  const { campaignId } = await setupCampaign(stamp, 1);
+
+  const clientA = await pool.connect();
+  const clientB = await pool.connect();
+  try {
+    // A toma el lock de esta campaña y lo retiene (no hace COMMIT todavía).
+    await clientA.query("BEGIN");
+    await clientA.query("SELECT pg_advisory_xact_lock(hashtext($1))", [campaignId]);
+
+    // B pide el MISMO lock (misma campaña). Debe quedar esperando: se
+    // corre en paralelo contra un timeout corto y se confirma que el
+    // timeout gana — es decir, que B NO consiguió el lock todavía.
+    await clientB.query("BEGIN");
+    const bLockPromise = clientB.query("SELECT pg_advisory_xact_lock(hashtext($1))", [campaignId]);
+    const timeout = new Promise((resolve) => setTimeout(() => resolve("timeout"), 200));
+    const first = await Promise.race([bLockPromise.then(() => "b_lock_adquirido"), timeout]);
+    assert.equal(first, "timeout", "B no debería poder tomar el lock mientras A todavía no hace COMMIT/ROLLBACK");
+
+    // A libera el lock (COMMIT). Ahora sí, B debería conseguirlo rápido.
+    await clientA.query("COMMIT");
+    await bLockPromise; // si esto no resuelve, la prueba se cuelga con timeout de node --test
+    await clientB.query("COMMIT");
+  } finally {
+    clientA.release();
+    clientB.release();
+  }
+});
+
+// Esta sí prueba que EL ENDPOINT (no solo Postgres en abstracto) realmente
+// toma el lock: se adquiere el lock de esta campaña "desde afuera" con un
+// cliente crudo (sin pasar por el endpoint) y se deja SIN hacer COMMIT. Si
+// el código de assign-groups de verdad ejecuta `pg_advisory_xact_lock` para
+// este mismo campaignId, su POST por HTTP debe quedarse esperando mientras
+// el lock externo siga tomado — determinista, no depende de que dos fetch()
+// lleguen a solaparse por azar.
+test("el endpoint /assign-groups de verdad espera el advisory lock (no solo Postgres en abstracto)", async () => {
+  const stamp = Date.now();
+  const { campaignId } = await setupCampaign(stamp, 5);
+
+  const holder = await pool.connect();
+  try {
+    await holder.query("BEGIN");
+    await holder.query("SELECT pg_advisory_xact_lock(hashtext($1))", [campaignId]);
+
+    // Con el lock externo tomado, el POST al endpoint no debería resolver
+    // dentro de un timeout corto.
+    const reqPromise = api("POST", `/api/campaigns/${campaignId}/assign-groups`, {});
+    const timeout = new Promise((resolve) => setTimeout(() => resolve("timeout"), 200));
+    const first = await Promise.race([reqPromise.then(() => "respuesta_del_endpoint"), timeout]);
+    assert.equal(first, "timeout", "el endpoint no debería responder mientras otra transacción tiene el lock de esta campaña");
+
+    // Se libera el lock externo; AHORA el endpoint debe completar pronto.
+    await holder.query("COMMIT");
+    const res = await reqPromise;
+    assert.equal(res.status, 200);
+    assert.equal(res.body.asignados, 5);
+  } finally {
+    holder.release();
+  }
+});
+
+// Prueba de humo a nivel HTTP: dos llamadas concurrentes de verdad sobre la
+// misma campaña no deben duplicar, perder, ni dejar sin grupo a ningún
+// participante. Esto NO prueba por sí solo que el lock sirvió (ver el
+// comentario de arriba) — lo que prueba es que, exista o no solape real, el
+// resultado final nunca queda inconsistente.
+test("dos llamadas concurrentes de verdad no pierden ni duplican participantes (resultado final consistente)", async () => {
+  const stamp = Date.now();
+  const N = 20;
+  const { campaignId, participantIds } = await setupCampaign(stamp, N);
+
+  const [r1, r2] = await Promise.all([
+    api("POST", `/api/campaigns/${campaignId}/assign-groups`, {}),
+    api("POST", `/api/campaigns/${campaignId}/assign-groups`, {}),
+  ]);
+  assert.equal(r1.status, 200);
+  assert.equal(r2.status, 200);
+
+  const groups = await groupsOf(participantIds);
+  assert.ok(groups.every((g) => g === "control" || g === "experimental"), "todos los N quedaron con un grupo válido, sin huecos");
+  const control = groups.filter((g) => g === "control").length;
+  assert.ok(Math.abs(control - (N - control)) <= 1, `el reparto final sigue balanceado: control=${control} de ${N}`);
 });
 
 test("404 si la campaña no existe", async () => {

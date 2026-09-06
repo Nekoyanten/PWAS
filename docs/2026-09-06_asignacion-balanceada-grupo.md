@@ -127,21 +127,17 @@ No hace falta ninguna migración de base de datos — la columna y el tipo
 
 ## 5. Qué falta / límites explícitos de este trabajo
 
-- **No hay botón en el panel admin todavía.** Igual que `GET /:id/plan`
-  (el endpoint hermano que sugiere el reparto de vector por equipo), este
-  es por ahora un endpoint de backend sin gancho visual — se puede llamar
-  con `curl`/Postman o agregar un botón "Asignar grupos balanceados" en la
-  pestaña Campaña del panel admin como siguiente paso, si se quiere.
-- **No hay control de concurrencia (lock).** Si dos personas llamaran a
-  este endpoint al mismo tiempo sobre la misma campaña, ambas leerían el
-  mismo conjunto de "elegibles" antes de escribir, y el resultado final
-  podría mezclar los dos repartos (perdiendo la garantía de balance
-  perfecto, aunque no se pierde ni duplica ningún participante). Dado que
-  esta es una herramienta de laboratorio operada por un solo investigador a
-  la vez — mismo nivel de confianza que ya tienen `generate-tokens` y
-  `reset`, ninguno de los cuales usa transacciones tampoco — no se agregó
-  un lock; queda anotado por si el proyecto alguna vez pasa a un contexto
-  con varios operadores concurrentes.
+- ~~**No hay botón en el panel admin todavía.**~~ **Resuelto el 6 de
+  septiembre** (mismo día, entrega separada): ver
+  `docs/2026-09-06_concurrencia-y-botones-asignacion-grupo.md` — ya hay
+  botones en la pestaña Campaña y una columna "Grupo" en la tabla de
+  enlaces.
+- ~~**No hay control de concurrencia (lock).**~~ **Resuelto el 6 de
+  septiembre** (mismo día, entrega separada): ver
+  `docs/2026-09-06_concurrencia-y-botones-asignacion-grupo.md` — el
+  endpoint ahora corre dentro de una transacción con un advisory lock de
+  Postgres por campaña, probado de forma determinista (no con dos
+  `Promise.all` cruzando los dedos).
 - **No estratifica por equipo ni por rol.** El balance es global a nivel de
   campaña (ej. 50/50 en total), no garantiza 50/50 dentro de cada equipo.
   Si el diseño experimental necesita balance por equipo, sería un cambio de

@@ -99,12 +99,20 @@ p04,directivo,Equipo 2"></textarea>
           <br><input id="linkBase" style="width:min(420px,100%);margin-top:.3rem;padding:.4rem .5rem;border:1px solid #cbd3e1;border-radius:6px">
         </p>
 
+        <h3>Grupo control / experimental (TG §9.2)</h3>
+        <p class="hint">Reparte a cada participante en control o experimental de forma <strong>aleatoria pero balanceada</strong> (nunca una diferencia mayor a 1) y reproducible. Por defecto solo asigna a quien todavía no tiene grupo — nunca pisa uno puesto a mano, y nunca toca a quien ya empezó su sesión.</p>
+        <div class="form-actions">
+          <button id="assignGroupsBtn" class="btn-sm">Asignar grupos (solo pendientes)</button>
+          <button id="assignGroupsForceBtn" class="btn-sm danger">Reasignar todos (fuerza)</button>
+          <span id="groupsMsg" class="hint"></span>
+        </div>
+
         <h3>Verificación previa a la sesión</h3>
         <ul class="checklist" id="preflight"><li><span class="mark">·</span> Conecta y elige una campaña.</li></ul>
         <div id="preflightVerdict"></div>
 
         <h3>Enlaces por participante</h3>
-        <table id="linksTable"><thead><tr><th>Identificador</th><th>Rol</th><th>Equipo</th><th>Mensajes</th><th>Encuesta</th><th>Enlace</th><th></th></tr></thead><tbody></tbody></table>
+        <table id="linksTable"><thead><tr><th>Identificador</th><th>Rol</th><th>Equipo</th><th>Grupo</th><th>Mensajes</th><th>Encuesta</th><th>Enlace</th><th></th></tr></thead><tbody></tbody></table>
       </div>
     </section>
 

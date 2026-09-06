@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { query } from "../db.js";
+import { query, withTransaction } from "../db.js";
 import { requireAdmin } from "../middleware/requireAdmin.js";
 import { generateAccessToken } from "../lib/tokens.js";
 import { assignBalanced } from "../lib/rng.js";
@@ -125,40 +125,62 @@ campaignsRouter.post("/:id/generate-tokens", requireAdmin, async (req, res) => {
 //     (`participant_campaign.session_started_at`), ni con force:true —
 //     cambiarle el grupo a mitad o después de la prueba invalidaría los
 //     datos ya recolectados (p.ej. si ya vio o no la intervención jolting).
+//
+// Concurrencia: todo el "leer quiénes son elegibles -> calcular el reparto
+// -> escribirlo" corre dentro de UNA transacción, con un advisory lock de
+// Postgres tomado sobre esta campaña como primer paso (`pg_advisory_xact_
+// lock`). Si dos llamadas llegan casi al mismo tiempo para la MISMA
+// campaña, la segunda queda esperando en ese lock hasta que la primera
+// termine (COMMIT o ROLLBACK) — así nunca leen el mismo conjunto de
+// "elegibles" antes de que el otro escriba, que era exactamente el riesgo
+// documentado en la entrega anterior (dos repartos mezclándose y perdiendo
+// la garantía de balance). El lock es "xact" (de transacción): Postgres lo
+// suelta solo al terminar, sin que el código tenga que acordarse de
+// liberarlo ni riesgo de dejarlo pegado si algo falla a mitad de camino.
+// Campañas DISTINTAS (distinto id -> distinto hash) nunca se bloquean entre
+// sí, así que esto no afecta el caso normal de un solo investigador.
 campaignsRouter.post("/:id/assign-groups", requireAdmin, async (req, res) => {
   const campaignId = req.params.id;
   const force = req.body?.force === true;
-  const c = await query(`SELECT seed FROM campaigns WHERE id = $1`, [campaignId]);
-  if (c.rows.length === 0) return res.status(404).json({ error: "Campaña no encontrada" });
 
-  const rows = await query(
-    `SELECT p.id AS participant_id, p.group_assignment, pc.session_started_at
-     FROM participant_campaign pc JOIN participants p ON p.id = pc.participant_id
-     WHERE pc.campaign_id = $1
-     ORDER BY p.id`,
-    [campaignId]
-  );
+  const result = await withTransaction(async (client) => {
+    await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [campaignId]);
 
-  const bloqueados = rows.rows.filter((r) => r.session_started_at !== null);
-  const disponibles = rows.rows.filter((r) => r.session_started_at === null);
-  const elegibles = disponibles.filter((r) => force || r.group_assignment === null);
-  const yaAsignados = disponibles.length - elegibles.length;
+    const c = await client.query(`SELECT seed FROM campaigns WHERE id = $1`, [campaignId]);
+    if (c.rows.length === 0) return { notFound: true };
 
-  let resumen = { control: 0, experimental: 0 };
-  if (elegibles.length > 0) {
-    const assigned = assignBalanced(["control", "experimental"], elegibles.length, `${c.rows[0].seed}:${campaignId}:group`);
-    for (let i = 0; i < elegibles.length; i++) {
-      await query(`UPDATE participants SET group_assignment = $1 WHERE id = $2`, [assigned[i], elegibles[i].participant_id]);
-      resumen[assigned[i]]++;
+    const rows = await client.query(
+      `SELECT p.id AS participant_id, p.group_assignment, pc.session_started_at
+       FROM participant_campaign pc JOIN participants p ON p.id = pc.participant_id
+       WHERE pc.campaign_id = $1
+       ORDER BY p.id`,
+      [campaignId]
+    );
+
+    const bloqueados = rows.rows.filter((r) => r.session_started_at !== null);
+    const disponibles = rows.rows.filter((r) => r.session_started_at === null);
+    const elegibles = disponibles.filter((r) => force || r.group_assignment === null);
+    const yaAsignados = disponibles.length - elegibles.length;
+
+    let resumen = { control: 0, experimental: 0 };
+    if (elegibles.length > 0) {
+      const assigned = assignBalanced(["control", "experimental"], elegibles.length, `${c.rows[0].seed}:${campaignId}:group`);
+      for (let i = 0; i < elegibles.length; i++) {
+        await client.query(`UPDATE participants SET group_assignment = $1 WHERE id = $2`, [assigned[i], elegibles[i].participant_id]);
+        resumen[assigned[i]]++;
+      }
     }
-  }
 
-  res.json({
-    asignados: elegibles.length,
-    resumen,
-    omitidos_ya_asignados: yaAsignados,
-    omitidos_por_sesion_iniciada: bloqueados.length,
+    return {
+      asignados: elegibles.length,
+      resumen,
+      omitidos_ya_asignados: yaAsignados,
+      omitidos_por_sesion_iniciada: bloqueados.length,
+    };
   });
+
+  if (result.notFound) return res.status(404).json({ error: "Campaña no encontrada" });
+  res.json(result);
 });
 
 // Equipos de la campaña (para elegir destinatarios al enviar un mensaje).
@@ -238,7 +260,7 @@ campaignsRouter.get("/:id/plan", requireAdmin, async (req, res) => {
 campaignsRouter.get("/:id/links", requireAdmin, async (req, res) => {
   const r = await query(
     `SELECT pc.id, pc.access_token, pc.session_started_at, pc.finished_at,
-            p.external_hash, p.role, p.team_label,
+            p.external_hash, p.role, p.team_label, p.group_assignment,
             (SELECT COUNT(*) FROM deliveries d WHERE d.participant_campaign_id = pc.id) AS mensajes,
             EXISTS (SELECT 1 FROM post_session_survey s WHERE s.participant_campaign_id = pc.id) AS encuesta
      FROM participant_campaign pc JOIN participants p ON p.id = pc.participant_id

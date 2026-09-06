@@ -134,10 +134,11 @@ async function loadLinks() {
   LINKS = links;
   $("#linksTable tbody").innerHTML = links.map((l) => `<tr>
     <td><code>${esc(l.external_hash)}</code></td><td>${esc(l.role)}</td><td>${esc(l.team_label || "—")}</td>
+    <td>${esc(l.group_assignment || "—")}</td>
     <td>${l.mensajes}</td><td>${l.encuesta ? "sí" : "no"}</td>
     <td><a href="${l.url}" target="_blank">${esc(linkBase())}${l.url}</a></td>
     <td><button class="btn-xs ghost" data-reset="${l.id}">reiniciar</button></td>
-  </tr>`).join("") || `<tr><td colspan="7" class="hint">Aún no hay enlaces. Pulsa "Generar enlaces para todos".</td></tr>`;
+  </tr>`).join("") || `<tr><td colspan="8" class="hint">Aún no hay enlaces. Pulsa "Generar enlaces para todos".</td></tr>`;
   $$("#linksTable [data-reset]").forEach((b) => b.onclick = async () => {
     if (confirm("¿Reiniciar este participante? Borra sus eventos y su encuesta.")) {
       try { await api("POST", `/api/campaigns/${CURRENT_CAMP}/participants/${b.dataset.reset}/reset`); loadLinks(); loadPreflight(); }
@@ -200,6 +201,27 @@ $("#genTokensBtn").addEventListener("click", async () => {
   try { const r = await api("POST", `/api/campaigns/${CURRENT_CAMP}/generate-tokens`, {});
     statusEl.textContent = `${r.generated} enlaces nuevos ✓`; await loadCampaigns(); }
   catch (e) { alert(e.message); }
+});
+// Resumen legible de la respuesta de /assign-groups, reutilizado por los dos
+// botones (con y sin force) — ver POST /api/campaigns/:id/assign-groups.
+function renderGroupsResult(r) {
+  const partes = [`Asignados: ${r.asignados} (control ${r.resumen.control} / experimental ${r.resumen.experimental})`];
+  if (r.omitidos_ya_asignados) partes.push(`ya tenían grupo: ${r.omitidos_ya_asignados}`);
+  if (r.omitidos_por_sesion_iniciada) partes.push(`sesión ya iniciada, no tocados: ${r.omitidos_por_sesion_iniciada}`);
+  $("#groupsMsg").textContent = partes.join(" · ") + " ✓";
+}
+$("#assignGroupsBtn").addEventListener("click", async () => {
+  if (!CURRENT_CAMP) return alert("Elige una campaña en el paso 2.");
+  $("#groupsMsg").textContent = "Asignando…";
+  try { const r = await api("POST", `/api/campaigns/${CURRENT_CAMP}/assign-groups`, {}); renderGroupsResult(r); await loadLinks(); }
+  catch (e) { $("#groupsMsg").textContent = "Error: " + e.message; }
+});
+$("#assignGroupsForceBtn").addEventListener("click", async () => {
+  if (!CURRENT_CAMP) return alert("Elige una campaña en el paso 2.");
+  if (!confirm("¿Reasignar el grupo de TODOS los participantes de esta campaña, incluso los que ya tenían uno puesto a mano? (Nunca toca a quien ya empezó su sesión).")) return;
+  $("#groupsMsg").textContent = "Reasignando…";
+  try { const r = await api("POST", `/api/campaigns/${CURRENT_CAMP}/assign-groups`, { force: true }); renderGroupsResult(r); await loadLinks(); }
+  catch (e) { $("#groupsMsg").textContent = "Error: " + e.message; }
 });
 async function setStatus(status) {
   try { await api("PATCH", `/api/campaigns/${CURRENT_CAMP}/status`, { status }); await loadCampaigns(); statusEl.textContent = `Campaña: ${status} ✓`; }
