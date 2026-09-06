@@ -2,7 +2,7 @@ import { Router } from "express";
 import { query } from "../db.js";
 import { buildSurveySchema, debriefText } from "../lib/survey.js";
 import {
-  renderWelcome, renderApp, renderMessage, renderStimulusLanding,
+  renderWelcome, renderCalibration, renderApp, renderMessage, renderStimulusLanding,
   renderActionDone, renderSurvey, renderDebrief, renderInvalid,
   renderJoltingInterstitial,
 } from "../lib/decoy.js";
@@ -18,6 +18,7 @@ async function loadPC(token) {
   const r = await query(
     `SELECT pc.id, pc.participant_id, pc.campaign_id, pc.access_token,
             pc.session_started_at, pc.finished_at,
+            pc.calibration_started_at, pc.calibration_completed_at,
             p.consent_given, p.group_assignment,
             c.name AS campaign_name, c.status AS campaign_status
      FROM participant_campaign pc
@@ -124,6 +125,7 @@ trackingRouter.get("/:token", async (req, res) => {
   const t = encodeURIComponent(pc.access_token);
   if (!pc.consent_given) return res.set(HTML).send(renderWelcome(pc.access_token, pc.campaign_name));
   if (pc.finished_at || pc.campaign_status === "finalizada") return res.redirect(`/t/${t}/survey`);
+  if (!pc.calibration_completed_at) return res.redirect(`/t/${t}/calibration`);
   return res.redirect(`/t/${t}/app`);
 });
 
@@ -135,6 +137,42 @@ trackingRouter.post("/:token/consent", async (req, res) => {
   if (!pc.consent_given) {
     await query(`UPDATE participants SET consent_given = TRUE, consent_timestamp = now() WHERE id = $1 AND consent_given = FALSE`, [pc.participant_id]);
   }
+  // Paso 2 del protocolo (TG §9.5): calibración antes del tablero, no
+  // directo a /app — ver renderCalibration() para el porqué.
+  res.redirect(`/t/${encodeURIComponent(pc.access_token)}/calibration`);
+});
+
+// Paso 2 del protocolo: calibración de ~30s (línea base de mouse/teclado)
+// entre el consentimiento y la tarea de navegación. Se muestra una sola vez;
+// revisitar el enlace después de completarla salta directo a /app (mismo
+// criterio que la intervención con `interventionAlreadyShown`).
+trackingRouter.get("/:token/calibration", async (req, res) => {
+  const pc = await loadPC(req.params.token);
+  if (!pc) return res.status(404).set(HTML).send(renderInvalid());
+  if (!pc.consent_given) return res.redirect(`/t/${encodeURIComponent(pc.access_token)}`);
+  if (pc.calibration_completed_at) return res.redirect(`/t/${encodeURIComponent(pc.access_token)}/app`);
+  if (!pc.calibration_started_at) {
+    await query(`UPDATE participant_campaign SET calibration_started_at = now() WHERE id = $1 AND calibration_started_at IS NULL`, [pc.id]);
+  }
+  res.set(HTML).send(renderCalibration(pc.access_token));
+});
+
+trackingRouter.post("/:token/calibration/complete", async (req, res) => {
+  const pc = await loadPC(req.params.token);
+  if (!pc) return res.status(404).set(HTML).send(renderInvalid());
+  if (!pc.consent_given) return res.redirect(`/t/${encodeURIComponent(pc.access_token)}`);
+  if (!pc.calibration_completed_at) {
+    // COALESCE en calibration_started_at por robustez: en el flujo normal
+    // siempre se pasó primero por GET /calibration (que ya lo puso), pero
+    // esta ruta no debería depender de eso para dejar un registro coherente
+    // si algún día se llama de otra forma (p.ej. un reintento de red).
+    await query(
+      `UPDATE participant_campaign
+       SET calibration_completed_at = now(), calibration_started_at = COALESCE(calibration_started_at, now())
+       WHERE id = $1 AND calibration_completed_at IS NULL`,
+      [pc.id]
+    );
+  }
   res.redirect(`/t/${encodeURIComponent(pc.access_token)}/app`);
 });
 
@@ -142,6 +180,9 @@ trackingRouter.get("/:token/app", async (req, res) => {
   const pc = await loadPC(req.params.token);
   if (!pc) return res.status(404).set(HTML).send(renderInvalid());
   if (!pc.consent_given) return res.redirect(`/t/${encodeURIComponent(pc.access_token)}`);
+  // No se puede saltar la calibración yendo directo a /app por URL: es un
+  // paso obligatorio del protocolo (TG §9.5), no una sugerencia.
+  if (!pc.calibration_completed_at) return res.redirect(`/t/${encodeURIComponent(pc.access_token)}/calibration`);
   if (!pc.session_started_at) {
     await query(`UPDATE participant_campaign SET session_started_at = now() WHERE id = $1 AND session_started_at IS NULL`, [pc.id]);
   }

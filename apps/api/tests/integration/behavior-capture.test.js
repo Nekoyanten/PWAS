@@ -47,6 +47,9 @@ const hop = (path, opts) => fetch(`${baseUrl}${path}`, { redirect: "manual", ...
 const postBehavior = (token, payload) => fetch(`${baseUrl}/t/${token}/behavior`, {
   method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
 });
+// Desde el parche de calibración (TG §9.5, paso 2): consentimiento ya no
+// entra directo a /app, pasa primero por /calibration.
+const completeCalibration = (token) => hop(`/t/${token}/calibration/complete`, { method: "POST" });
 
 // Crea campaña + un participante consentido, y le entrega un ataque, tal
 // como hacen las demás suites de integración. Devuelve token/deliveryId
@@ -69,6 +72,7 @@ async function setupParticipant(stamp, extra = {}) {
     [`beh_${stamp}`]
   )).rows[0].access_token;
   await form(`/t/${token}/consent`, "consent=1");
+  await completeCalibration(token);
   const deliveryId = (await (await hop(`/t/${token}/app`)).text()).match(/\/d\/([0-9a-f-]{36})/)[1];
   return { token, campaignId, deliveryId };
 }

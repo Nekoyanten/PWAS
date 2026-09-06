@@ -37,6 +37,9 @@ async function api(method, path, body) {
 }
 const hop = (path, opts = {}) => fetch(`${baseUrl}${path}`, { redirect: "manual", ...opts });
 const form = (path, data) => hop(path, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: data });
+// Desde el parche de calibración (TG §9.5, paso 2): consentimiento ya no
+// entra directo a /app, pasa primero por /calibration.
+const completeCalibration = (token) => hop(`/t/${token}/calibration/complete`, { method: "POST" });
 
 // Crea plantilla + campaña + un participante del grupo dado, lo suscribe,
 // consiente, envía un ataque y devuelve { token, deliveryId, pcId }.
@@ -57,6 +60,7 @@ async function setupAttackFor(groupAssignment) {
   const msg = await api("POST", `/api/campaigns/${campaignId}/messages`, { template_id: t.body.template.id, kind: "email" });
   await api("POST", `/api/messages/${msg.body.message.id}/send`, { team_labels: [team] });
   await form(`/t/${token}/consent`, "consent=1");
+  await completeCalibration(token);
   const inboxHtml = await (await hop(`/t/${token}/app`)).text();
   const deliveryId = inboxHtml.match(/\/t\/[^/]+\/d\/([0-9a-f-]{36})/)[1];
   const pcId = (await pool.query(`SELECT id FROM participant_campaign WHERE access_token = $1`, [token])).rows[0].id;

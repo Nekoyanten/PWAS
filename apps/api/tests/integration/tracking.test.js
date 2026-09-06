@@ -31,6 +31,9 @@ async function api(method, path, body) {
 }
 const hop = (path, opts = {}) => fetch(`${baseUrl}${path}`, { redirect: "manual", ...opts });
 const form = (path, data) => hop(path, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: data });
+// Desde el parche de calibración (TG §9.5, paso 2): consentimiento ya no
+// entra directo a /app, pasa primero por /calibration.
+const completeCalibration = (token) => hop(`/t/${token}/calibration/complete`, { method: "POST" });
 
 test("assignBalanced es determinista y balanceado", () => {
   const r1 = assignBalanced(["a", "b", "c"], 9, "s");
@@ -66,10 +69,16 @@ test("flujo completo mensajes+deliveries: envío -> caída -> encuesta -> debrie
   const send = await api("POST", `/api/messages/${msg.body.message.id}/send`, { team_labels: [team] });
   assert.equal(send.body.delivered, 1);
 
-  // el participante entra -> consentimiento -> app
+  // el participante entra -> consentimiento -> calibración -> app
   assert.match(await (await hop(`/t/${token}`)).text(), /piloto de usabilidad/i);
   const consent = await form(`/t/${token}/consent`, "consent=1");
   assert.equal(consent.status, 302);
+  assert.match(consent.headers.get("location"), /\/calibration$/, "el consentimiento entra primero a la calibración, no directo a /app");
+  // ir directo a /app sin haber completado la calibración redirige de vuelta
+  const skip = await hop(`/t/${token}/app`);
+  assert.equal(skip.status, 302);
+  assert.match(skip.headers.get("location"), /\/calibration$/);
+  await completeCalibration(token);
   assert.equal((await hop(`/t/${token}/app`)).status, 200);
 
   // localizar el delivery del ataque en la bandeja
@@ -147,6 +156,7 @@ test("reset de participante permite volver a hacer la prueba", async () => {
   const m = await api("POST", `/api/campaigns/${c.body.campaign.id}/messages`, { template_id: t.body.template.id });
   await api("POST", `/api/messages/${m.body.message.id}/send`, { team_labels: [team] });
   await form(`/t/${token}/consent`, "consent=1");
+  await completeCalibration(token);
   const did = (await (await hop(`/t/${token}/app`)).text()).match(/\/d\/([0-9a-f-]{36})/)[1];
   await hop(`/t/${token}/d/${did}/go`);
   await hop(`/t/${token}/finish`, { method: "POST" });
@@ -162,11 +172,14 @@ test("reset de participante permite volver a hacer la prueba", async () => {
   assert.equal(ev.rows[0].n, 0, "el reset borra los eventos de interacción");
   const deliv = await pool.query(`SELECT COUNT(*)::int n FROM deliveries WHERE participant_campaign_id = $1`, [pcId]);
   assert.ok(deliv.rows[0].n > 0, "el reset conserva los mensajes ya enviados");
-  const pc = await pool.query(`SELECT session_started_at, finished_at FROM participant_campaign WHERE id = $1`, [pcId]);
+  const pc = await pool.query(`SELECT session_started_at, finished_at, calibration_started_at, calibration_completed_at FROM participant_campaign WHERE id = $1`, [pcId]);
   assert.equal(pc.rows[0].finished_at, null);
+  assert.equal(pc.rows[0].calibration_started_at, null, "el reset también hace que se repita la calibración");
+  assert.equal(pc.rows[0].calibration_completed_at, null);
   // tras el reset vuelve a pedir consentimiento
   assert.match(await (await hop(`/t/${token}`)).text(), /piloto de usabilidad/i);
-  // y el mensaje sigue en la bandeja al re-hacer la prueba
+  // y el mensaje sigue en la bandeja al re-hacer la prueba (pasando de nuevo por la calibración)
   await form(`/t/${token}/consent`, "consent=1");
+  await completeCalibration(token);
   assert.match(await (await hop(`/t/${token}/app`)).text(), /\/d\/[0-9a-f-]{36}/);
 });

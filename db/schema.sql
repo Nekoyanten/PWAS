@@ -103,6 +103,8 @@ CREATE TABLE participant_campaign (
   session_started_at     TIMESTAMPTZ,
   usability_interactions INTEGER NOT NULL DEFAULT 0,
   finished_at            TIMESTAMPTZ,
+  calibration_started_at   TIMESTAMPTZ,  -- TG §9.5 paso 2: línea base de mouse/teclado antes de la tarea de navegación
+  calibration_completed_at TIMESTAMPTZ,  -- NULL bloquea el acceso a /app (paso obligatorio, no opcional)
   UNIQUE (participant_id, campaign_id)
 );
 CREATE INDEX idx_pc_token ON participant_campaign(access_token);

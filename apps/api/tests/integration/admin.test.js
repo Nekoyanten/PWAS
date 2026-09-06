@@ -23,6 +23,11 @@ const api = async (method, path, body) => {
 };
 const form = (path, data) => fetch(`${baseUrl}${path}`, { method: "POST", redirect: "manual", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: data });
 const hop = (path, opts) => fetch(`${baseUrl}${path}`, { redirect: "manual", ...opts });
+// Desde el parche de calibración (TG §9.5, paso 2): consentimiento ya no
+// entra directo a /app, pasa primero por /calibration. Los tests que solo
+// necesitan llegar al tablero no simulan la tarea neutra, solo marcan el
+// paso como completado igual que haría el botón "Continuar" del cliente.
+const completeCalibration = (token) => hop(`/t/${token}/calibration/complete`, { method: "POST" });
 
 test("seed-defaults crea la biblioteca estándar (15 ataque + 6 relleno) y es idempotente", async () => {
   const r1 = await api("POST", "/api/templates/seed-defaults", {});
@@ -86,6 +91,7 @@ test("/overview incluye embudo, por_tecnica, por_rol y percepcion", async () => 
 
   const token = (await pool.query(`SELECT access_token FROM participant_campaign pc JOIN participants p ON p.id = pc.participant_id WHERE p.external_hash = $1`, [`ov_${stamp}`])).rows[0].access_token;
   await form(`/t/${token}/consent`, "consent=1");
+  await completeCalibration(token);
   const did = (await (await hop(`/t/${token}/app`)).text()).match(/\/d\/([0-9a-f-]{36})/)[1];
   await hop(`/t/${token}/d/${did}/go`);
   await hop(`/t/${token}/d/${did}/submit`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });

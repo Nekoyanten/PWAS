@@ -287,6 +287,115 @@ export function renderWelcome(token, campaignName) {
 </div>`);
 }
 
+// Paso 2 del protocolo (TG §9.5): calibración de ~30s antes de la tarea de
+// navegación, para fijar una línea base de la forma de usar el mouse/teclado
+// de ESTE participante en particular ANTES de exponerlo a ningún estímulo
+// (ningún ataque, ninguna urgencia) — así el análisis de 8.2.3 puede comparar
+// "cómo se mueve normalmente" contra "cómo se mueve durante/después de un
+// ataque", en vez de solo mirar el segundo dato sin punto de referencia.
+//
+// Dos tareas neutras, una detrás de otra, ninguna con contenido real:
+//   1) Clics en un objetivo que cambia de posición al azar (línea base de
+//      dinámica de MOUSE: velocidad, trayectoria, precisión).
+//   2) Copiar una frase neutra en un campo de texto (línea base de dinámica
+//      de TECLADO: ritmo entre teclas). La frase NUNCA se envía a ningún
+//      lado — no hay ningún <form> ni fetch() que lea `value` de este campo;
+//      apps/api/public/js/behavior-capture.js, que ya está activo en esta
+//      pantalla (ver behaviorCaptureTag más abajo), solo registra
+//      `event.code` (la tecla física), nunca el carácter ni el valor del
+//      campo — mismo invariante de privacidad que el resto del proyecto.
+//
+// El cronómetro (como en renderJoltingInterstitial) es enteramente del lado
+// del cliente: esta es una herramienta de laboratorio con un investigador
+// presente, no un control de seguridad adversarial, así que se sigue el
+// mismo criterio de confianza que ya usa el resto del flujo del participante
+// (p.ej. "Continuar de todas formas" en la intervención tampoco se valida en
+// el servidor). El servidor sí registra `calibration_started_at` /
+// `calibration_completed_at`, que alcanza para poder filtrar después
+// cualquier sesión sospechosamente corta si hiciera falta.
+const CALIBRATION_TARGET_CLICKS = 8;
+const CALIBRATION_PHRASE = "El veloz murciélago hindú comía feliz cardillo y kiwi.";
+
+export function renderCalibration(token) {
+  const t = encodeURIComponent(token);
+  return shell("Calibración — TaskFlow", `
+<div class="plate">
+  <div class="sheet wide calib">
+    <div class="brand">${LOGO} TaskFlow</div>
+    <h1>Antes de comenzar</h1>
+    <p class="sub">Una tarea breve (~30 s) para calibrar cómo usas el mouse y el teclado. No mide tu desempeño — no hay respuestas correctas ni incorrectas.</p>
+
+    <div id="calib-step-mouse">
+      <p>Haz clic en el círculo apenas aparezca. Se repetirá varias veces.</p>
+      <div id="calib-area">
+        <button type="button" id="calib-target" aria-label="Objetivo de calibración"></button>
+      </div>
+      <p class="note" id="calib-mouse-progress">Objetivo 1 de ${CALIBRATION_TARGET_CLICKS}</p>
+    </div>
+
+    <div id="calib-step-type" hidden>
+      <p>Ahora copia esta frase en el campo de abajo (lo que escribas no se guarda, solo el ritmo al teclear):</p>
+      <p style="font-weight:600;color:var(--ink)">&ldquo;${escapeHtml(CALIBRATION_PHRASE)}&rdquo;</p>
+      <div class="field"><input type="text" id="calib-typing-input" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Escribe aquí…"></div>
+    </div>
+
+    <form method="POST" action="/t/${t}/calibration/complete" style="margin-top:.5rem">
+      <button class="btn block" type="submit" id="calib-continue" disabled>Continuar (<span id="calib-count">30</span>s)</button>
+    </form>
+    <p class="note">Ejercicio académico autorizado · esta calibración es parte obligatoria del estudio.</p>
+  </div>
+</div>
+<style>
+.sheet.calib #calib-area{position:relative;height:210px;margin:.9rem 0;border:1px dashed var(--line);border-radius:var(--radius-sm);background:var(--panel);overflow:hidden}
+.sheet.calib #calib-target{position:absolute;width:36px;height:36px;border-radius:50%;background:var(--brand);border:none;cursor:pointer;top:0;left:0;transition:background .1s}
+.sheet.calib #calib-target:active{background:var(--brand-strong)}
+</style>
+<script>
+(function(){
+  var TOTAL_MS = 30000;
+  var TARGET_CLICKS = ${CALIBRATION_TARGET_CLICKS};
+  var area = document.getElementById('calib-area');
+  var target = document.getElementById('calib-target');
+  var mouseStep = document.getElementById('calib-step-mouse');
+  var typeStep = document.getElementById('calib-step-type');
+  var progress = document.getElementById('calib-mouse-progress');
+  var btn = document.getElementById('calib-continue');
+  var lbl = document.getElementById('calib-count');
+  var clicks = 0;
+
+  function moveTarget() {
+    var pad = 4, w = area.clientWidth - target.offsetWidth - pad * 2, h = area.clientHeight - target.offsetHeight - pad * 2;
+    target.style.left = (pad + Math.random() * Math.max(0, w)) + 'px';
+    target.style.top = (pad + Math.random() * Math.max(0, h)) + 'px';
+  }
+
+  target.addEventListener('click', function () {
+    clicks += 1;
+    if (clicks >= TARGET_CLICKS) {
+      mouseStep.hidden = true;
+      typeStep.hidden = false;
+      return;
+    }
+    progress.textContent = 'Objetivo ' + (clicks + 1) + ' de ' + TARGET_CLICKS;
+    moveTarget();
+  });
+  moveTarget();
+
+  var start = Date.now();
+  var timer = setInterval(function () {
+    var left = Math.max(0, TOTAL_MS - (Date.now() - start));
+    lbl.textContent = Math.ceil(left / 1000);
+    if (left <= 0) {
+      clearInterval(timer);
+      btn.disabled = false;
+      btn.textContent = 'Continuar';
+    }
+  }, 100);
+})();
+</script>
+${behaviorCaptureTag(token, "calibration")}`);
+}
+
 export function renderApp(token, { inbox, view }) {
   const t = encodeURIComponent(token);
   const unread = inbox.filter((m) => m.unread).length;
