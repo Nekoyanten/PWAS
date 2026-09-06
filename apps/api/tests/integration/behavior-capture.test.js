@@ -220,3 +220,59 @@ test("export exige x-api-key (mismo criterio que el resto de /api/export)", asyn
   const res = await fetch(`${baseUrl}/api/export/behavior-events.json`);
   assert.equal(res.status, 401);
 });
+
+test("GET /api/dashboard/behavior-summary agrega sesiones/participantes/eventos por fase, sin duplicar por fan-out", async () => {
+  const stamp = Date.now();
+  const { token, campaignId, deliveryId } = await setupParticipant(stamp);
+
+  // Sesión 1, fase "landing": 3 mousemove + 2 click -> 5 muestras.
+  const session1 = crypto.randomUUID();
+  await postBehavior(token, {
+    session_id: session1, phase: "landing", delivery_id: deliveryId,
+    samples: [
+      { t: 0, type: "mousemove", x: 1, y: 1 },
+      { t: 10, type: "mousemove", x: 2, y: 2 },
+      { t: 20, type: "mousemove", x: 3, y: 3 },
+      { t: 30, type: "click", x: 3, y: 3 },
+      { t: 1000, type: "click", x: 4, y: 4 },
+    ],
+  });
+
+  // Segundo participante, misma campaña, también fase "landing": 1 keydown + 1 keyup.
+  const stamp2 = `${stamp}_b`;
+  await api("POST", "/api/participants/import", {
+    participants: [{ external_hash: `beh_${stamp2}`, role: "estudiante", team_label: `BehTeam ${stamp}` }],
+  });
+  await api("POST", `/api/campaigns/${campaignId}/generate-tokens`, {});
+  const token2 = (await pool.query(
+    `SELECT access_token FROM participant_campaign pc JOIN participants p ON p.id = pc.participant_id WHERE p.external_hash = $1`,
+    [`beh_${stamp2}`]
+  )).rows[0].access_token;
+  await form(`/t/${token2}/consent`, "consent=1");
+  await completeCalibration(token2);
+  const session2 = crypto.randomUUID();
+  await postBehavior(token2, {
+    session_id: session2, phase: "landing",
+    samples: [
+      { t: 0, type: "keydown", code: "KeyA" },
+      { t: 5, type: "keyup", code: "KeyA" },
+    ],
+  });
+
+  const summary = await api("GET", `/api/dashboard/behavior-summary?campaign_id=${campaignId}`);
+  assert.equal(summary.status, 200);
+  const landing = summary.body.por_fase.find((r) => r.phase === "landing");
+  assert.ok(landing, "aparece una fila para la fase 'landing'");
+  assert.equal(landing.sesiones, 2, "2 sesiones (una por cada participante), sin fan-out por las 7 muestras totales");
+  assert.equal(landing.participantes, 2);
+  assert.equal(landing.mousemove, 3);
+  assert.equal(landing.clics, 2, "click cuenta como clic");
+  assert.equal(landing.teclas, 2, "keydown+keyup cuentan como teclas");
+  assert.equal(landing.muestras_totales, 7);
+  assert.ok(landing.duracion_prom_seg >= 0, "duracion_prom_seg es un promedio numérico, no un conteo inflado");
+});
+
+test("GET /api/dashboard/behavior-summary exige x-api-key", async () => {
+  const res = await fetch(`${baseUrl}/api/dashboard/behavior-summary`);
+  assert.equal(res.status, 401);
+});

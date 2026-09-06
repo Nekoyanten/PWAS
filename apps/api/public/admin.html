@@ -224,6 +224,16 @@ p04,directivo,Equipo 2"></textarea>
         <section class="cards" id="resCards"></section>
         <a class="btn-sm" href="/index.html">Abrir el dashboard completo</a>
       </div>
+      <div class="panel">
+        <h2>Captura conductual (mouse y teclado)</h2>
+        <p class="hint">Se registra solo mientras el participante está en la campaña activa (arriba), sin que tenga que hacer nada especial: movimientos de mouse, clics, y ritmo entre teclas — <strong>nunca</strong> lo que escribe. Una fila por pantalla ("fase") en la que estuvo.</p>
+        <table id="behTable"><thead><tr><th>Pantalla</th><th>Sesiones</th><th>Participantes</th><th>Duración prom.</th><th>Movimientos de mouse</th><th>Clics</th><th>Teclas</th></tr></thead><tbody></tbody></table>
+        <div class="form-actions">
+          <button id="downloadBehaviorBtn" class="btn-sm ghost">Descargar captura conductual (CSV)</button>
+          <span id="behMsg" class="hint"></span>
+        </div>
+        <p class="help">El CSV trae una fila por cada muestra individual (posición de mouse, clic o tecla) con su marca de tiempo, la pantalla, y el rol/grupo/equipo del participante — para analizarlo en Excel/Python. No incluye ningún identificador que permita ubicar a la persona real.</p>
+      </div>
     </section>
   </main>
   <script src="/admin.js"></script>

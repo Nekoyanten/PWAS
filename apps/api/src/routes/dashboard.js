@@ -23,6 +23,63 @@ dashboardRouter.get("/fall-reasons", requireAdmin, async (req, res) => {
   res.json({ reasons: result.rows });
 });
 
+// Resumen de la captura conductual (Tabla 1 §8.2.1, fila 1), agregado por
+// `phase` — para responder de un vistazo "¿de verdad estamos midiendo esto?"
+// sin tener que abrir el CSV crudo de /api/export/behavior-events. NUNCA una
+// fila por participante: solo conteos y promedios por fase.
+//
+// `duracion_prom_seg` = promedio de (última muestra recibida − primera) por
+// sesión de esa fase: un proxy razonable de "cuánto tiempo pasó ahí" (p.ej.
+// en 'landing' o 'calibration', que corresponden a una sola pantalla), pero
+// en 'app' abarca toda la navegación, no una tarea puntual — para tiempos
+// por ataque específico, ver `tiempo_reaccion_ms` en /api/dashboard/overview.
+//
+// Dos CTEs por separado (sesiones y eventos) en vez de un solo JOIN+GROUP BY:
+// unir behavior_sessions con behavior_events antes de agregar duplicaría cada
+// sesión una vez por cada una de sus muestras, e inflaría sesiones/duración
+// (bug real, encontrado y corregido en revisión antes de enviar esto).
+dashboardRouter.get("/behavior-summary", requireAdmin, async (req, res) => {
+  const params = [];
+  let where = "";
+  if (req.query.campaign_id) {
+    params.push(req.query.campaign_id);
+    where = `WHERE pc.campaign_id = $${params.length}`;
+  }
+  const result = await query(
+    `WITH sess AS (
+       SELECT bs.phase, bs.id, bs.participant_campaign_id,
+              EXTRACT(EPOCH FROM (bs.last_flush_at - bs.started_at)) AS duracion_seg
+       FROM behavior_sessions bs
+       JOIN participant_campaign pc ON pc.id = bs.participant_campaign_id
+       ${where}
+     ),
+     sess_agg AS (
+       SELECT phase, COUNT(*)::int AS sesiones, COUNT(DISTINCT participant_campaign_id)::int AS participantes,
+              ROUND(AVG(duracion_seg)::numeric, 1) AS duracion_prom_seg
+       FROM sess GROUP BY phase
+     ),
+     events_agg AS (
+       SELECT sess.phase,
+              COUNT(*) AS muestras_totales,
+              COUNT(*) FILTER (WHERE be.event_type = 'mousemove')                        AS mousemove,
+              COUNT(*) FILTER (WHERE be.event_type IN ('click','mousedown','mouseup'))    AS clics,
+              COUNT(*) FILTER (WHERE be.event_type IN ('keydown','keyup'))                AS teclas
+       FROM sess JOIN behavior_events be ON be.behavior_session_id = sess.id
+       GROUP BY sess.phase
+     )
+     SELECT sa.phase, sa.sesiones, sa.participantes, sa.duracion_prom_seg,
+            COALESCE(ea.muestras_totales, 0)::int AS muestras_totales,
+            COALESCE(ea.mousemove, 0)::int        AS mousemove,
+            COALESCE(ea.clics, 0)::int             AS clics,
+            COALESCE(ea.teclas, 0)::int            AS teclas
+     FROM sess_agg sa
+     LEFT JOIN events_agg ea ON ea.phase = sa.phase
+     ORDER BY sa.phase`,
+    params
+  );
+  res.json({ por_fase: result.rows });
+});
+
 // Resumen ejecutivo de una sola llamada — pensado para poblar el dashboard
 // de un vistazo (Objetivo 4).
 // Métricas sobre los deliveries de mensajes de ATAQUE, agrupadas por una sola

@@ -419,7 +419,43 @@ async function loadResults() {
     ];
     $("#resCards").innerHTML = cards.map((c) => `<div class="card"><div class="value">${c.v}</div><div class="label">${c.l}</div></div>`).join("");
   } catch (e) { $("#resCards").innerHTML = `<p class="hint">Error: ${esc(e.message)}</p>`; }
+  loadBehaviorSummary();
 }
+
+/* -------- Captura conductual (mouse/teclado) -------- */
+const PHASE_LABEL = {
+  app: "Tablero (TaskFlow)", message: "Mensaje abierto", landing: "Página del ataque",
+  calibration: "Calibración", survey: "Encuesta",
+};
+async function loadBehaviorSummary() {
+  const tbody = $("#behTable tbody");
+  if (!CURRENT_CAMP) { tbody.innerHTML = `<tr><td colspan="7" class="hint">Elige una campaña en el paso 2.</td></tr>`; return; }
+  try {
+    const { por_fase } = await api("GET", `/api/dashboard/behavior-summary?campaign_id=${CURRENT_CAMP}`);
+    tbody.innerHTML = por_fase.length
+      ? por_fase.map((r) => `<tr>
+          <td>${esc(PHASE_LABEL[r.phase] || r.phase)}</td>
+          <td>${r.sesiones}</td><td>${r.participantes}</td>
+          <td>${r.duracion_prom_seg != null ? Math.round(r.duracion_prom_seg) + "s" : "—"}</td>
+          <td>${r.mousemove}</td><td>${r.clics}</td><td>${r.teclas}</td>
+        </tr>`).join("")
+      : `<tr><td colspan="7" class="hint">Todavía no hay captura registrada para esta campaña — ábrele el enlace a un participante y navega un poco.</td></tr>`;
+  } catch (e) { tbody.innerHTML = `<tr><td colspan="7" class="hint">Error: ${esc(e.message)}</td></tr>`; }
+}
+$("#downloadBehaviorBtn").addEventListener("click", async () => {
+  if (!CURRENT_CAMP) return alert("Elige una campaña en el paso 2.");
+  $("#behMsg").textContent = "Generando…";
+  try {
+    const res = await fetch(`/api/export/behavior-events.csv?campaign_id=${CURRENT_CAMP}`, { headers: { "x-api-key": KEY } });
+    if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || `HTTP ${res.status}`); }
+    const blob = await res.blob();
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `captura_conductual_${currentCampaign()?.name || CURRENT_CAMP}.csv`.replace(/[^\w.-]+/g, "_");
+    a.click();
+    $("#behMsg").textContent = "Listo ✓";
+  } catch (e) { $("#behMsg").textContent = "Error: " + e.message; }
+});
 
 /* ================= arranque ================= */
 toggleAttackFields(); toggleMsgAttack();
