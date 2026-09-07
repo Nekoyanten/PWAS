@@ -91,6 +91,24 @@ campaignsRouter.patch("/:id/jolting", requireAdmin, async (req, res) => {
   res.json({ campaign: r.rows[0] });
 });
 
+// Migración 007, MODO SOMBRA (TG §8.2.5 -- motor de decisión con umbral de
+// riesgo): a partir de qué puntaje [0,1] del modelo temporal el motor
+// HABRÍA mostrado la intervención (deliveries.risk_would_trigger). Todavía
+// NO gatea la intervención real -- eso sigue dependiendo solo de
+// jolting_roll (ver joltingEligible en tracking.js) mientras el modelo se
+// entrene con etiquetas sintéticas. Igual que jolting_probability, cambiar
+// esto no recalcula deliveries ya puntuados: cada uno guarda el umbral que
+// estaba vigente cuando se calculó su risk_score.
+campaignsRouter.patch("/:id/risk-threshold", requireAdmin, async (req, res) => {
+  const threshold = Number(req.body?.threshold);
+  if (!Number.isFinite(threshold) || threshold < 0 || threshold > 1) {
+    return res.status(400).json({ error: "threshold debe ser un número entre 0 y 1" });
+  }
+  const r = await query(`UPDATE campaigns SET risk_threshold = $1 WHERE id = $2 RETURNING *`, [threshold, req.params.id]);
+  if (r.rows.length === 0) return res.status(404).json({ error: "Campaña no encontrada" });
+  res.json({ campaign: r.rows[0] });
+});
+
 // Genera un enlace de un solo uso por participante (sin estímulo todavía:
 // el estímulo se envía después como un "mensaje" desde la pestaña Mensajes).
 campaignsRouter.post("/:id/generate-tokens", requireAdmin, async (req, res) => {

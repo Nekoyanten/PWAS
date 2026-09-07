@@ -27,7 +27,7 @@ CREATE TYPE participant_role AS ENUM ('estudiante', 'profesor', 'directivo');
 CREATE TYPE group_assignment AS ENUM ('control', 'experimental');
 CREATE TYPE attack_vector AS ENUM ('autoridad', 'urgencia', 'escasez', 'prueba_social', 'curiosidad');
 CREATE TYPE delivery_channel AS ENUM ('email_simulado', 'sms_simulado', 'web');
-CREATE TYPE event_type AS ENUM ('entregado', 'abierto', 'clic', 'intento_envio', 'reportado', 'permiso_concedido');
+CREATE TYPE event_type AS ENUM ('entregado', 'abierto', 'clic', 'intento_envio', 'reportado', 'permiso_concedido', 'intervencion_mostrada', 'intervencion_cancelada');
 CREATE TYPE landing_kind AS ENUM ('form', 'permiso');   -- 'permiso' = pantalla de autorización simulada (sin hardware)
 CREATE TYPE message_kind AS ENUM ('email', 'task');     -- cómo se muestra el mensaje en la bandeja de TaskFlow
 CREATE TYPE fall_reason AS ENUM (
@@ -79,6 +79,7 @@ CREATE TABLE campaigns (
   template_id          UUID REFERENCES templates(id),
   seed                 TEXT NOT NULL DEFAULT substr(md5(random()::text), 1, 12),
   jolting_probability  NUMERIC(4,3) NOT NULL DEFAULT 1.000 CHECK (jolting_probability >= 0 AND jolting_probability <= 1),
+  risk_threshold       NUMERIC(4,3) NOT NULL DEFAULT 0.500 CHECK (risk_threshold >= 0 AND risk_threshold <= 1),
   scheduled_at         TIMESTAMPTZ,
   status               campaign_status NOT NULL DEFAULT 'borrador',
   created_at           TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -87,6 +88,8 @@ COMMENT ON COLUMN campaigns.seed IS
   'Semilla para sugerir un reparto balanceado y reproducible de vectores entre equipos (el admin puede seguirlo o no).';
 COMMENT ON COLUMN campaigns.jolting_probability IS
   'Probabilidad (0..1) de que un envío de un mensaje con jolting_enabled=TRUE muestre el aviso "Espera un momento..." al grupo experimental (migración 006). 1.0 = siempre. No afecta al grupo control.';
+COMMENT ON COLUMN campaigns.risk_threshold IS
+  'Umbral (0..1) del motor de decisión por riesgo (migración 007, modo SOMBRA): a partir de qué puntaje se habría mostrado la intervención. No gatea nada todavía -- ver deliveries.risk_would_trigger.';
 
 CREATE TABLE campaign_templates (
   campaign_id  UUID NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
@@ -143,10 +146,19 @@ CREATE TABLE deliveries (
   participant_campaign_id UUID NOT NULL REFERENCES participant_campaign(id) ON DELETE CASCADE,
   delivered_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
   jolting_roll            BOOLEAN NOT NULL DEFAULT TRUE,  -- migración 006: sorteo fijo (sembrado) contra campaigns.jolting_probability, calculado una sola vez al crear el delivery
+  risk_score              NUMERIC(6,5),  -- migración 007 (SOMBRA): puntaje [0,1] del modelo temporal, calculado en segundo plano al hacer clic
+  risk_would_trigger      BOOLEAN,       -- migración 007: risk_score >= campaigns.risk_threshold vigente al momento del cálculo -- no gatea nada todavía
+  risk_scored_at          TIMESTAMPTZ,
+  risk_model_version      TEXT,          -- sha256 del .onnx usado
+  risk_score_error        TEXT,          -- motivo si no se pudo calcular (nunca bloquea el flujo del participante)
   UNIQUE (message_id, participant_campaign_id)
 );
 COMMENT ON COLUMN deliveries.jolting_roll IS
   'Resultado fijo del sorteo de probabilidad (campaigns.jolting_probability), sembrado con seed+message_id+participant_campaign_id (migración 006). Junto con messages.jolting_enabled y group_assignment=''experimental'' decide si tracking.js muestra la intervención.';
+COMMENT ON COLUMN deliveries.risk_score IS
+  'Puntaje de riesgo [0,1] del modelo temporal (migración 007), calculado en segundo plano al hacer clic en el mensaje. NULL si no se pudo calcular (ver risk_score_error).';
+COMMENT ON COLUMN deliveries.risk_would_trigger IS
+  'Decisión SOMBRA: risk_score >= campaigns.risk_threshold vigente AL MOMENTO de calcular el puntaje (fijo desde entonces, igual que jolting_roll). NO decide si se muestra la intervención real todavía.';
 CREATE INDEX idx_deliveries_pc ON deliveries(participant_campaign_id);
 
 -- ----------------------------------------------------------------------------

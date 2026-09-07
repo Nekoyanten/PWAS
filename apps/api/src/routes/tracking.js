@@ -6,6 +6,7 @@ import {
   renderActionDone, renderSurvey, renderDebrief, renderInvalid,
   renderJoltingInterstitial,
 } from "../lib/decoy.js";
+import { scoreAndStoreDeliveryRisk } from "../lib/riskScore.js";
 
 export const trackingRouter = Router();
 
@@ -254,6 +255,24 @@ trackingRouter.get("/:token/d/:deliveryId/go", async (req, res) => {
   if (!pc) return res.status(404).set(HTML).send(renderInvalid());
   const d = await loadDelivery(pc.id, req.params.deliveryId);
   if (!pc.consent_given || !d || !d.is_attack) return res.redirect(`/t/${encodeURIComponent(pc.access_token)}/app`);
+
+  // TG §8.2.5 / migración 007, MODO SOMBRA: calcula el puntaje de riesgo del
+  // modelo temporal sobre la captura conductual de este participante en este
+  // mensaje, EN SEGUNDO PLANO -- disparado recién cuando la respuesta YA
+  // terminó de enviarse (res.on("finish")), para que ni el cálculo ni la
+  // conexión a la base de datos que usa puedan retrasar ni en un milisegundo
+  // lo que ve el participante. En un piloto de laboratorio con gente
+  // entrando y saliendo, una demora perceptible en una página que simula ser
+  // normal sería en sí misma una pista. Se guarda para análisis; todavía NO
+  // decide si se muestra la intervención (eso lo sigue haciendo
+  // joltingEligible de abajo, sin cambios) porque el modelo se entrenó con
+  // etiquetas sintéticas -- ver docs/2026-09-07_motor-decision-riesgo.md.
+  res.on("finish", () => {
+    scoreAndStoreDeliveryRisk(d.delivery_id).catch((err) => {
+      // eslint-disable-next-line no-console
+      console.error(`[riskScore] fallo calculando riesgo para delivery ${d.delivery_id}:`, err);
+    });
+  });
 
   if (joltingEligible(pc, d) && !(await interventionAlreadyShown(d.delivery_id))) {
     await recordOnce(pc.id, d.delivery_id, "intervencion_mostrada", reactionMs(d.delivered_at));

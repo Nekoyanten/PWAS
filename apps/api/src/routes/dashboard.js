@@ -80,6 +80,43 @@ dashboardRouter.get("/behavior-summary", requireAdmin, async (req, res) => {
   res.json({ por_fase: result.rows });
 });
 
+// Resumen del motor de decisión por riesgo (migración 007, TG §8.2.5),
+// MODO SOMBRA -- agregado por group_assignment, para comparar de un vistazo
+// qué tan seguido el puntaje de riesgo HABRÍA mostrado la intervención
+// (risk_would_trigger, calculado por ml/ + apps/api/src/lib/riskScore.js)
+// contra lo que de verdad se mostró con el sorteo de probabilidad
+// (jolting_roll + evento 'intervencion_mostrada'). Es solo para análisis:
+// no cambia nada del flujo del participante, y las etiquetas con las que se
+// entrenó el modelo siguen siendo sintéticas (ver
+// docs/2026-09-07_motor-decision-riesgo.md).
+dashboardRouter.get("/risk-summary", requireAdmin, async (req, res) => {
+  const params = [];
+  let campaignFilter = "";
+  if (req.query.campaign_id) {
+    params.push(req.query.campaign_id);
+    campaignFilter = `AND pc.campaign_id = $${params.length}`;
+  }
+  const result = await query(
+    `SELECT COALESCE(p.group_assignment::text, 'sin_grupo') AS grupo,
+            COUNT(*)::int AS ataques_totales,
+            COUNT(d.risk_score)::int AS puntuados,
+            COUNT(*) FILTER (WHERE d.risk_score_error IS NOT NULL)::int AS con_error,
+            ROUND(AVG(d.risk_score)::numeric, 4) AS riesgo_promedio,
+            COUNT(*) FILTER (WHERE d.risk_would_trigger)::int AS gate_sombra_habria_mostrado,
+            COUNT(DISTINCT ev.delivery_id)::int AS intervencion_mostrada_real
+     FROM deliveries d
+     JOIN messages m ON m.id = d.message_id
+     JOIN participant_campaign pc ON pc.id = d.participant_campaign_id
+     JOIN participants p ON p.id = pc.participant_id
+     LEFT JOIN events ev ON ev.delivery_id = d.id AND ev.event_type = 'intervencion_mostrada'
+     WHERE m.is_attack ${campaignFilter}
+     GROUP BY p.group_assignment
+     ORDER BY grupo`,
+    params
+  );
+  res.json({ por_grupo: result.rows });
+});
+
 // Resumen ejecutivo de una sola llamada — pensado para poblar el dashboard
 // de un vistazo (Objetivo 4).
 // Métricas sobre los deliveries de mensajes de ATAQUE, agrupadas por una sola

@@ -83,6 +83,7 @@ function onCampaignChange() {
   $("#campDetailName").textContent = c.name;
   $("#campStatusBadge").textContent = c.status;
   $("#joltingProb").value = c.jolting_probability ?? 1;
+  $("#riskThreshold").value = c.risk_threshold ?? 0.5;
   loadLinks();
   loadPreflight();
   loadMessages();
@@ -235,6 +236,18 @@ $("#saveJoltingBtn").addEventListener("click", async () => {
   try { await api("PATCH", `/api/campaigns/${CURRENT_CAMP}/jolting`, { probability }); await loadCampaigns();
     $("#joltingMsg").textContent = `Probabilidad guardada: ${probability} ✓ (afecta a los mensajes que envíes desde ahora)`; }
   catch (e) { $("#joltingMsg").textContent = "Error: " + e.message; }
+});
+$("#saveRiskThresholdBtn").addEventListener("click", async () => {
+  if (!CURRENT_CAMP) return alert("Elige una campaña en el paso 2.");
+  const threshold = Number($("#riskThreshold").value);
+  if (!Number.isFinite(threshold) || threshold < 0 || threshold > 1) {
+    $("#riskThresholdMsg").textContent = "Escribe un número entre 0 y 1.";
+    return;
+  }
+  $("#riskThresholdMsg").textContent = "Guardando…";
+  try { await api("PATCH", `/api/campaigns/${CURRENT_CAMP}/risk-threshold`, { threshold }); await loadCampaigns();
+    $("#riskThresholdMsg").textContent = `Umbral guardado: ${threshold} ✓ (modo sombra — no afecta a lo que ve el participante)`; }
+  catch (e) { $("#riskThresholdMsg").textContent = "Error: " + e.message; }
 });
 async function setStatus(status) {
   try { await api("PATCH", `/api/campaigns/${CURRENT_CAMP}/status`, { status }); await loadCampaigns(); statusEl.textContent = `Campaña: ${status} ✓`; }
@@ -459,6 +472,25 @@ async function loadResults() {
     $("#resCards").innerHTML = cards.map((c) => `<div class="card"><div class="value">${c.v}</div><div class="label">${c.l}</div></div>`).join("");
   } catch (e) { $("#resCards").innerHTML = `<p class="hint">Error: ${esc(e.message)}</p>`; }
   loadBehaviorSummary();
+  loadRiskSummary();
+}
+
+/* -------- Motor de decisión por riesgo (modo sombra) -------- */
+async function loadRiskSummary() {
+  const tbody = $("#riskTable tbody");
+  if (!CURRENT_CAMP) { tbody.innerHTML = `<tr><td colspan="7" class="hint">Elige una campaña en el paso 2.</td></tr>`; return; }
+  try {
+    const { por_grupo } = await api("GET", `/api/dashboard/risk-summary?campaign_id=${CURRENT_CAMP}`);
+    tbody.innerHTML = por_grupo.length
+      ? por_grupo.map((r) => `<tr>
+          <td>${esc(r.grupo)}</td>
+          <td>${r.ataques_totales}</td><td>${r.puntuados}</td><td>${r.con_error}</td>
+          <td>${r.riesgo_promedio != null ? r.riesgo_promedio : "—"}</td>
+          <td>${r.gate_sombra_habria_mostrado}</td>
+          <td>${r.intervencion_mostrada_real}</td>
+        </tr>`).join("")
+      : `<tr><td colspan="7" class="hint">Todavía no hay ataques enviados en esta campaña.</td></tr>`;
+  } catch (e) { tbody.innerHTML = `<tr><td colspan="7" class="hint">Error: ${esc(e.message)}</td></tr>`; }
 }
 
 /* -------- Captura conductual (mouse/teclado) -------- */
