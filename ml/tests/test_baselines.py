@@ -64,9 +64,13 @@ def test_deterministic_with_fixed_seed():
 
 def test_random_forest_near_perfect_score_on_synthetic_labels_is_explained_by_label_construction():
     # Encontrado y confirmado durante la revisión /engineering:debug del
-    # pipeline sobre datos reales: en la corrida de evaluate.py, Random
-    # Forest da accuracy=1.0 y ROC-AUC=1.0 en el set de prueba (N=44
-    # sesiones). Esto NO es evidencia de que el modelo "aprendió a detectar
+    # pipeline sobre datos reales (antes de agregar el preprocesamiento de
+    # dataset.py/preprocess.py, Random Forest daba accuracy=1.0/ROC-AUC=1.0
+    # exactos en el set de prueba; con el preprocesamiento -- viewport +
+    # resampleo + suavizado -- cambian los valores numéricos de las
+    # features pero NO la explicación: sigue siendo notablemente alto, y
+    # sigue bajando al quitar las dos columnas que generan la etiqueta).
+    # Esto NO es evidencia de que el modelo "aprendió a detectar
     # phishing" -- es la consecuencia mecánica y esperable de que
     # `synthetic_labels()` construye la etiqueta como una combinación lineal
     # (con poco ruido) de `mouse_efficiency` y `mouse_mean_velocity`, dos
@@ -75,10 +79,10 @@ def test_random_forest_near_perfect_score_on_synthetic_labels_is_explained_by_la
     # remueven esas dos columnas (dejando el resto, muchas de ellas
     # correlacionadas con las removidas por derivarse de la misma
     # trayectoria de mouse), el accuracy debe bajar -- confirmando que el
-    # resultado "perfecto" depende de la construcción de la etiqueta
-    # sintética, no de una señal real de riesgo de phishing. Cuando existan
-    # etiquetas reales (encuestas post-sesión), este resultado no se
-    # replicará y NO debe usarse como referencia de desempeño esperado.
+    # resultado alto depende de la construcción de la etiqueta sintética,
+    # no de una señal real de riesgo de phishing. Cuando existan etiquetas
+    # reales (encuestas post-sesión), este resultado no se replicará y NO
+    # debe usarse como referencia de desempeño esperado.
     rows = load_export(REAL_DATA)
     df = build_feature_table(rows)
     y = synthetic_labels(df, seed=42)
@@ -89,8 +93,8 @@ def test_random_forest_near_perfect_score_on_synthetic_labels_is_explained_by_la
     )
     out_full = train_baselines(X_train, y_train, X_test, y_test, FEATURE_COLUMNS, seed=42)
     acc_full = out_full["results"]["random_forest"]["metrics"]["accuracy"]
-    assert acc_full >= 0.95, (
-        "se esperaba reproducir el resultado casi perfecto documentado en "
+    assert acc_full >= 0.85, (
+        "se esperaba reproducir el resultado notablemente alto documentado en "
         "reports/metrics.json con las features completas"
     )
 

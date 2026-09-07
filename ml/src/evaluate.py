@@ -24,9 +24,20 @@ from sklearn.metrics import confusion_matrix, roc_curve
 from sklearn.model_selection import train_test_split
 
 from .baselines import train_baselines
-from .dataset import build_feature_table, build_sequences, load_export, synthetic_labels, FEATURE_COLUMNS
+from .dataset import (
+    build_feature_table, build_sequences, load_export, synthetic_labels,
+    FEATURE_COLUMNS, FEATURE_COLUMNS_Z,
+)
 from .export_onnx import export_and_verify
 from .train import train_temporal_model
+
+# Features de los baselines: las 15 agregadas de siempre + las 3 z-score
+# (TG §8.2.1 fila 2, agregado el 7 de sept.) -- normalizar velocidad de
+# mouse y latencias de teclado contra la línea base de calibración del
+# propio participante es señal adicional real (no redundante 1:1 con la
+# cruda: cambia de escala según cada persona), así que se incluyen en el
+# entrenamiento de los baselines, no solo se calculan y se guardan sin usar.
+ALL_FEATURE_COLUMNS = FEATURE_COLUMNS + FEATURE_COLUMNS_Z
 
 HERE = os.path.dirname(__file__)
 DATA_PATH = os.path.join(HERE, "..", "data", "behavior_events_real.json")
@@ -37,18 +48,19 @@ SEED = 42
 def run() -> dict:
     os.makedirs(REPORTS_DIR, exist_ok=True)
     rows = load_export(DATA_PATH)
-    df = build_feature_table(rows)
+    df = build_feature_table(rows)  # preprocess=True (default): viewport + resampleo + suavizado + z-score personal
     y = synthetic_labels(df, seed=SEED)
-    X = df[FEATURE_COLUMNS].to_numpy()
+    X = df[ALL_FEATURE_COLUMNS].to_numpy()
 
     n_sessions = len(df)
     label_balance = {"n_sessions": n_sessions, "n_positive": int(y.sum()), "n_negative": int(n_sessions - y.sum())}
+    baseline_z_counts = df["baseline_z_source"].value_counts().to_dict()
 
     # --- Baselines --------------------------------------------------------
     X_train, X_test, y_train, y_test, idx_train, idx_test = train_test_split(
         X, y, np.arange(n_sessions), test_size=0.25, random_state=SEED, stratify=y,
     )
-    baseline_out = train_baselines(X_train, y_train, X_test, y_test, FEATURE_COLUMNS, seed=SEED)
+    baseline_out = train_baselines(X_train, y_train, X_test, y_test, ALL_FEATURE_COLUMNS, seed=SEED)
 
     # ROC curves
     plt.figure(figsize=(5, 5))
@@ -114,12 +126,17 @@ def run() -> dict:
     parity = export_and_verify(temporal_out["model"], temporal_out["example_inputs"], onnx_path, atol=1e-4)
 
     metrics = {
-        "generated_at": "2026-09-06",
+        "generated_at": "2026-09-07",
         "data_source": "Supabase (proyecto PWAS, producción) vía export_behavior_events — REAL, no sintético",
         "n_real_events": len(rows),
         "n_real_sessions": n_sessions,
         "labels": "SINTÉTICAS — ver dataset.synthetic_labels; no representan ninguna encuesta real (0 encuestas registradas al momento de esta corrida)",
         "label_balance": label_balance,
+        "preprocessing": {
+            "steps": "normalización por viewport -> resampleo a rejilla pareja -> suavizado (ver src/preprocess.py)",
+            "baseline_z_source_counts": baseline_z_counts,
+            "note": "'personal' = z-score contra la sesión de calibración de ESE participante; 'poblacional' = contra las 44 sesiones reales, para sesiones sin calibración registrada (capturadas antes del 6 de sept.)",
+        },
         "baselines": {k: v["metrics"] for k, v in baseline_out["results"].items()},
         "temporal_model": {
             "loss_first_epoch": history[0]["loss"],

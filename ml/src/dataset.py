@@ -34,6 +34,12 @@ from .features import (
     mouse_sequence,
     keystroke_sequence,
 )
+from .preprocess import (
+    preprocess_mouse_samples,
+    compute_calibration_baselines,
+    baseline_for,
+    zscore,
+)
 
 
 def load_export(path: str) -> list[dict]:
@@ -62,16 +68,45 @@ def _session_metadata(events: list[dict]) -> dict:
     }
 
 
-def build_feature_table(rows: list[dict]) -> pd.DataFrame:
+def build_feature_table(rows: list[dict], preprocess: bool = True) -> pd.DataFrame:
+    """`preprocess=True` (default, TG §8.2.1 fila 2 -> fila 3): antes de
+    calcular AUC/SE/MD, la trayectoria de mouse se normaliza por el
+    viewport de esa sesión, se resamplea a una rejilla de tiempo pareja y
+    se suaviza (`preprocess.preprocess_mouse_samples`) -- ver el docstring
+    de ese módulo para el porqué de cada paso. Además se agregan tres
+    columnas `*_z`: la velocidad media de mouse y las latencias medias de
+    teclado, expresadas como z-score contra la línea base de calibración
+    de ESE participante cuando existe, o contra la población de las 44
+    sesiones reales si no (`baseline_z_source` deja constancia de cuál se
+    usó, sesión por sesión).
+
+    `preprocess=False` reproduce el comportamiento anterior a este cambio
+    (features sobre la trayectoria cruda, sin columnas `_z`) -- se deja
+    disponible para quien quiera comparar antes/después, no como el modo
+    recomendado.
+    """
     sessions = group_by_session(rows)
+    baselines = compute_calibration_baselines(rows) if preprocess else None
     records = []
     for sid, events in sessions.items():
         meta = _session_metadata(events)
-        mouse_f = mouse_trajectory_features(events).to_dict()
+        if preprocess:
+            vp_w, vp_h = events[0].get("viewport_w"), events[0].get("viewport_h")
+            mouse_samples = preprocess_mouse_samples(events, vp_w, vp_h)
+        else:
+            mouse_samples = events
+        mouse_f = mouse_trajectory_features(mouse_samples).to_dict()
         key_f = keystroke_features(events).to_dict()
         rec = {"session_id": sid, **meta}
         rec.update({f"mouse_{k}": v for k, v in mouse_f.items()})
         rec.update({f"key_{k}": v for k, v in key_f.items()})
+        if preprocess:
+            pc = events[0].get("participant_campaign_id")
+            b = baseline_for(pc, baselines)
+            rec["mouse_mean_velocity_z"] = zscore(mouse_f["mean_velocity"], b.mouse_velocity_mean, b.mouse_velocity_std)
+            rec["key_mean_dwell_ms_z"] = zscore(key_f["mean_dwell_ms"], b.dwell_mean, b.dwell_std)
+            rec["key_mean_flight_ms_z"] = zscore(key_f["mean_flight_ms"], b.flight_mean, b.flight_std)
+            rec["baseline_z_source"] = b.source
         records.append(rec)
     return pd.DataFrame.from_records(records)
 
@@ -85,6 +120,15 @@ FEATURE_COLUMNS = [
     "key_mean_flight_ms", "key_std_flight_ms",
 ]
 
+# Columnas z-score (solo presentes cuando build_feature_table se llama con
+# preprocess=True, el default) -- separadas de FEATURE_COLUMNS para no
+# romper el contrato existente de quien ya consume esa lista (p.ej. los
+# tests de baselines.py que la usan tal cual), y porque son casi-redundantes
+# con sus versiones crudas (misma señal, solo re-escalada) -- mezclarlas de
+# entrada en FEATURE_COLUMNS le daría a esa señal el doble de peso frente a
+# las demás sin que nadie lo haya decidido a propósito.
+FEATURE_COLUMNS_Z = ["mouse_mean_velocity_z", "key_mean_dwell_ms_z", "key_mean_flight_ms_z"]
+
 
 def _pad(seq: list[tuple], max_len: int, width: int) -> tuple[np.ndarray, np.ndarray]:
     arr = np.zeros((max_len, width), dtype=np.float32)
@@ -96,13 +140,27 @@ def _pad(seq: list[tuple], max_len: int, width: int) -> tuple[np.ndarray, np.nda
     return arr, mask
 
 
-def build_sequences(rows: list[dict], max_mouse_len: int = 64, max_key_len: int = 32):
+def build_sequences(rows: list[dict], max_mouse_len: int = 64, max_key_len: int = 32,
+                     preprocess: bool = True):
     """Devuelve (session_ids, mouse_arr[N,max_mouse_len,3], mouse_mask[N,max_mouse_len],
-    key_arr[N,max_key_len,2], key_mask[N,max_key_len], meta_list)."""
+    key_arr[N,max_key_len,2], key_mask[N,max_key_len], meta_list).
+
+    `preprocess=True` (default): la secuencia (dt,dx,dy) de mouse que ve la
+    rama TCN se calcula sobre la trayectoria YA normalizada por
+    viewport/resampleada/suavizada (`preprocess.preprocess_mouse_samples`),
+    en vez de sobre los deltas crudos -- mismo razonamiento que en
+    `build_feature_table`. La secuencia de teclado no se toca aquí (no es
+    una señal continua que resamplear/suavizar); su z-score personal ya
+    vive en `build_feature_table` como columna agregada.
+    """
     sessions = group_by_session(rows)
     session_ids, mouse_arrs, mouse_masks, key_arrs, key_masks, metas = [], [], [], [], [], []
     for sid, events in sessions.items():
-        m_seq = mouse_sequence(events)
+        if preprocess:
+            vp_w, vp_h = events[0].get("viewport_w"), events[0].get("viewport_h")
+            m_seq = mouse_sequence(preprocess_mouse_samples(events, vp_w, vp_h))
+        else:
+            m_seq = mouse_sequence(events)
         k_seq = keystroke_sequence(events)
         m_arr, m_mask = _pad(m_seq, max_mouse_len, 3)
         k_arr, k_mask = _pad(k_seq, max_key_len, 2)

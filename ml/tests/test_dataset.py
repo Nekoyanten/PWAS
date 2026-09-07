@@ -90,6 +90,37 @@ def test_feature_table_and_sequences_agree_on_session_order():
     assert set(session_ids) == set(df["session_id"])
 
 
+def test_preprocess_default_adds_z_columns_and_every_real_session_gets_a_personal_baseline():
+    # Los 44 eventos reales vienen de solo 5 participant_campaign_id
+    # distintos (cada uno con varias fases: calibración + app/mensaje/
+    # aterrizaje) -- así que, a diferencia de lo que se podría suponer,
+    # las 44 filas SÍ tienen una calibración propia disponible (no caen al
+    # respaldo poblacional). Este test deja eso documentado con datos
+    # reales, para que no se lea como un bug si `baseline_z_source` sale
+    # "personal" para el 100% de las filas.
+    rows = load_export(REAL_DATA)
+    df = build_feature_table(rows)
+    for col in ("mouse_mean_velocity_z", "key_mean_dwell_ms_z", "key_mean_flight_ms_z", "baseline_z_source"):
+        assert col in df.columns
+    assert df["baseline_z_source"].notna().all()
+    assert set(df["baseline_z_source"].unique()).issubset({"personal", "poblacional"})
+    assert (df["baseline_z_source"] == "personal").all(), (
+        "con los datos reales actuales (5 participantes, cada uno con su "
+        "propia sesión de calibración), las 44 filas deberían tener línea "
+        "base personal -- si esto cambia, probablemente cambió el dataset, "
+        "no necesariamente un bug, pero vale la pena mirarlo"
+    )
+
+
+def test_preprocess_false_reproduces_pre_preprocessing_behavior_without_z_columns():
+    rows = load_export(REAL_DATA)
+    df_raw = build_feature_table(rows, preprocess=False)
+    assert "baseline_z_source" not in df_raw.columns
+    assert "mouse_mean_velocity_z" not in df_raw.columns
+    for col in FEATURE_COLUMNS:
+        assert df_raw[col].notna().all()
+
+
 def test_synthetic_labels_deterministic_and_documented_as_synthetic():
     rows = load_export(REAL_DATA)
     df = build_feature_table(rows)
