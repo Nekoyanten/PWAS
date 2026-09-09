@@ -1,0 +1,304 @@
+{
+  "viewport_w": 1920,
+  "viewport_h": 945,
+  "sessions": {
+    "sess-calib-pcA": {
+      "phase": "calibration",
+      "participant_campaign_id": "pcA",
+      "raw_events": [
+        {
+          "t_ms": 38,
+          "event_type": "mousemove",
+          "x": 80,
+          "y": 120
+        },
+        {
+          "t_ms": 79,
+          "event_type": "mousemove",
+          "x": 94,
+          "y": 129
+        },
+        {
+          "t_ms": 115,
+          "event_type": "mousemove",
+          "x": 108,
+          "y": 138
+        },
+        {
+          "t_ms": 157,
+          "event_type": "mousemove",
+          "x": 122,
+          "y": 147
+        },
+        {
+          "t_ms": 195,
+          "event_type": "mousemove",
+          "x": 136,
+          "y": 120
+        },
+        {
+          "t_ms": 230,
+          "event_type": "mousemove",
+          "x": 150,
+          "y": 129
+        },
+        {
+          "t_ms": 270,
+          "event_type": "mousemove",
+          "x": 164,
+          "y": 138
+        },
+        {
+          "t_ms": 308,
+          "event_type": "mousemove",
+          "x": 178,
+          "y": 147
+        },
+        {
+          "t_ms": 347,
+          "event_type": "mousemove",
+          "x": 192,
+          "y": 120
+        },
+        {
+          "t_ms": 400,
+          "event_type": "keydown",
+          "key_code": "KeyA"
+        },
+        {
+          "t_ms": 460,
+          "event_type": "keyup",
+          "key_code": "KeyA"
+        },
+        {
+          "t_ms": 520,
+          "event_type": "keydown",
+          "key_code": "KeyB"
+        },
+        {
+          "t_ms": 570,
+          "event_type": "keyup",
+          "key_code": "KeyB"
+        }
+      ],
+      "expected_mouse_features": {
+        "n_points": 9,
+        "auc": 0.005113660697248766,
+        "se": 0.0011433060227189816,
+        "md": 0.004545476175332235,
+        "path_length": 0.056070305945514695,
+        "straight_line_distance": 0.050265889806241755,
+        "efficiency": 0.8964796777653884,
+        "mean_velocity": 0.00017521970607973342,
+        "std_velocity": 3.643631594452769e-05,
+        "mean_acceleration": -8.650782086899901e-06,
+        "std_acceleration": 4.541240464612424e-05
+      },
+      "expected_key_features": {
+        "n_keys": 2,
+        "mean_dwell_ms": 55.0,
+        "std_dwell_ms": 7.0710678118654755,
+        "mean_flight_ms": 60.0,
+        "std_flight_ms": 0.0
+      },
+      "expected_baseline_source": "personal",
+      "expected_mouse_mean_velocity_z": 0.0,
+      "expected_key_mean_dwell_ms_z": 0.0,
+      "expected_key_mean_flight_ms_z": 0.0
+    },
+    "sess-msg-pcA": {
+      "phase": "message",
+      "participant_campaign_id": "pcA",
+      "raw_events": [
+        {
+          "t_ms": 40,
+          "event_type": "mousemove",
+          "x": 200,
+          "y": 300
+        },
+        {
+          "t_ms": 78,
+          "event_type": "mousemove",
+          "x": 214,
+          "y": 309
+        },
+        {
+          "t_ms": 121,
+          "event_type": "mousemove",
+          "x": 228,
+          "y": 318
+        },
+        {
+          "t_ms": 158,
+          "event_type": "mousemove",
+          "x": 242,
+          "y": 327
+        },
+        {
+          "t_ms": 199,
+          "event_type": "mousemove",
+          "x": 256,
+          "y": 300
+        },
+        {
+          "t_ms": 237,
+          "event_type": "mousemove",
+          "x": 270,
+          "y": 309
+        },
+        {
+          "t_ms": 273,
+          "event_type": "mousemove",
+          "x": 284,
+          "y": 318
+        },
+        {
+          "t_ms": 315,
+          "event_type": "mousemove",
+          "x": 298,
+          "y": 327
+        },
+        {
+          "t_ms": 354,
+          "event_type": "mousemove",
+          "x": 312,
+          "y": 300
+        },
+        {
+          "t_ms": 350,
+          "event_type": "keydown",
+          "key_code": "KeyC"
+        },
+        {
+          "t_ms": 410,
+          "event_type": "keyup",
+          "key_code": "KeyC"
+        }
+      ],
+      "expected_mouse_features": {
+        "n_points": 9,
+        "auc": 0.004755387838698828,
+        "se": 0.0010602116804761062,
+        "md": 0.004227011412176736,
+        "path_length": 0.05552595195105242,
+        "straight_line_distance": 0.050091591112671106,
+        "efficiency": 0.9021293530785056,
+        "mean_velocity": 0.0001735185998470388,
+        "std_velocity": 3.466027432674312e-05,
+        "mean_acceleration": -8.195561963267433e-06,
+        "std_acceleration": 4.2836317906698085e-05
+      },
+      "expected_key_features": {
+        "n_keys": 1,
+        "mean_dwell_ms": 60.0,
+        "std_dwell_ms": 0.0,
+        "mean_flight_ms": 0.0,
+        "std_flight_ms": 0.0
+      },
+      "expected_baseline_source": "personal",
+      "expected_mouse_mean_velocity_z": -0.04668710841360771,
+      "expected_key_mean_dwell_ms_z": 0.7071067811865475,
+      "expected_key_mean_flight_ms_z": -60.0
+    },
+    "sess-msg-pcB": {
+      "phase": "message",
+      "participant_campaign_id": "pcB",
+      "raw_events": [
+        {
+          "t_ms": 37,
+          "event_type": "mousemove",
+          "x": 500,
+          "y": 60
+        },
+        {
+          "t_ms": 77,
+          "event_type": "mousemove",
+          "x": 514,
+          "y": 69
+        },
+        {
+          "t_ms": 115,
+          "event_type": "mousemove",
+          "x": 528,
+          "y": 78
+        },
+        {
+          "t_ms": 156,
+          "event_type": "mousemove",
+          "x": 542,
+          "y": 87
+        },
+        {
+          "t_ms": 192,
+          "event_type": "mousemove",
+          "x": 556,
+          "y": 60
+        },
+        {
+          "t_ms": 231,
+          "event_type": "mousemove",
+          "x": 570,
+          "y": 69
+        },
+        {
+          "t_ms": 269,
+          "event_type": "mousemove",
+          "x": 584,
+          "y": 78
+        },
+        {
+          "t_ms": 311,
+          "event_type": "mousemove",
+          "x": 598,
+          "y": 87
+        },
+        {
+          "t_ms": 346,
+          "event_type": "mousemove",
+          "x": 612,
+          "y": 60
+        }
+      ],
+      "expected_mouse_features": {
+        "n_points": 9,
+        "auc": 0.005065186378498977,
+        "se": 0.0011274349439748693,
+        "md": 0.004502387891999092,
+        "path_length": 0.05586033502645572,
+        "straight_line_distance": 0.05013589357776222,
+        "efficiency": 0.8975222499832417,
+        "mean_velocity": 0.0001745635469576741,
+        "std_velocity": 3.589255389634032e-05,
+        "mean_acceleration": -8.576896866233329e-06,
+        "std_acceleration": 4.498759351410495e-05
+      },
+      "expected_key_features": {
+        "n_keys": 0,
+        "mean_dwell_ms": 0.0,
+        "std_dwell_ms": 0.0,
+        "mean_flight_ms": 0.0,
+        "std_flight_ms": 0.0
+      },
+      "expected_baseline_source": "poblacional",
+      "expected_mouse_mean_velocity_z": 0.18500667877148236,
+      "expected_key_mean_dwell_ms_z": -23.0,
+      "expected_key_mean_flight_ms_z": -1.0
+    }
+  },
+  "expected_population_baseline": {
+    "mouse_velocity_mean": 0.0001744339509614821,
+    "mouse_velocity_std": 7.004936094878011e-07,
+    "dwell_mean": 57.5,
+    "dwell_std": 2.5,
+    "flight_mean": 30.0,
+    "flight_std": 30.0
+  },
+  "expected_personal_baseline_pcA": {
+    "mouse_velocity_mean": 0.00017521970607973342,
+    "mouse_velocity_std": 3.643631594452769e-05,
+    "dwell_mean": 55.0,
+    "dwell_std": 7.0710678118654755,
+    "flight_mean": 60.0,
+    "flight_std": 1.0
+  }
+}

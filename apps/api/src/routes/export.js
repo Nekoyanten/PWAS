@@ -96,3 +96,43 @@ exportRouter.get("/behavior-events.:format", requireAdmin, async (req, res) => {
   }
   res.json(result.rows);
 });
+
+// Etiquetado fino (Tabla 1 §8.2.1, módulo 7, migración 008): una fila por
+// SESIÓN con sus features ya calculadas (AUC/SE/MD, latencias de tecleo,
+// z-scores contra calibración) -- a diferencia de behavior-events.csv de
+// arriba (una fila por muestra cruda), este export no necesita abrirse en
+// Python para volverse analizable: `POST /api/dashboard/recompute-features`
+// deja esta tabla al día, y este endpoint solo la lee. Mismo criterio de
+// privacidad que el resto de exports: pc.id (participant_campaign_id),
+// nunca external_hash.
+exportRouter.get("/session-features.:format", requireAdmin, async (req, res) => {
+  const params = [];
+  let where = "";
+  if (req.query.campaign_id) {
+    params.push(req.query.campaign_id);
+    where = `WHERE pc.campaign_id = $${params.length}`;
+  }
+  const result = await query(
+    `SELECT
+       f.session_id, f.participant_campaign_id, f.phase,
+       p.role, p.group_assignment, p.team_label,
+       f.mouse_n_points, f.mouse_auc, f.mouse_se, f.mouse_md, f.mouse_path_length,
+       f.mouse_straight_line_distance, f.mouse_efficiency, f.mouse_mean_velocity,
+       f.mouse_std_velocity, f.mouse_mean_acceleration, f.mouse_std_acceleration,
+       f.key_n_keys, f.key_mean_dwell_ms, f.key_std_dwell_ms, f.key_mean_flight_ms, f.key_std_flight_ms,
+       f.mouse_mean_velocity_z, f.key_mean_dwell_ms_z, f.key_mean_flight_ms_z,
+       f.baseline_z_source, f.feature_version, f.computed_at
+     FROM behavior_session_features f
+     JOIN participant_campaign pc ON pc.id = f.participant_campaign_id
+     JOIN participants p          ON p.id = pc.participant_id
+     ${where}
+     ORDER BY pc.id, f.session_id`,
+    params
+  );
+  if (req.params.format === "csv") {
+    res.set("Content-Type", "text/csv; charset=utf-8");
+    res.set("Content-Disposition", "attachment; filename=session_features.csv");
+    return res.send(toCsv(result.rows));
+  }
+  res.json(result.rows);
+});

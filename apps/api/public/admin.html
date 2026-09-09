@@ -266,6 +266,16 @@ p04,directivo,Equipo 2"></textarea>
         <p class="help">El CSV trae una fila por cada muestra individual (posición de mouse, clic o tecla) con su marca de tiempo, la pantalla, y el rol/grupo/equipo del participante — para analizarlo en Excel/Python. No incluye ningún identificador que permita ubicar a la persona real.</p>
       </div>
       <div class="panel">
+        <h2>Features por sesión (etiquetado fino, §8.2.3)</h2>
+        <p class="hint">A diferencia de la captura cruda de arriba (una fila por muestra), esto es una fila por <strong>sesión</strong> con sus features ya calculadas: AUC/SE/MD de la trayectoria de mouse, latencias de tecleo, y su z-score contra la línea base de calibración de cada participante (o contra el resto de sesiones, si no tiene calibración propia). Es el mismo cálculo que ya usa el pipeline de análisis (ml/), pero guardado aquí para no depender de correrlo aparte. No decide ni cambia nada del flujo del participante.</p>
+        <div class="form-actions">
+          <button id="recomputeFeaturesBtn" class="btn-sm">Calcular features de esta campaña</button>
+          <button id="downloadFeaturesBtn" class="btn-sm ghost">Descargar features (CSV)</button>
+          <span id="featuresMsg" class="hint"></span>
+        </div>
+        <table id="featuresTable"><thead><tr><th>Pantalla</th><th>Sesiones</th><th>Con features</th><th>AUC promedio</th><th>Velocidad promedio</th><th>Dwell promedio</th><th>Línea base personal</th><th>Línea base poblacional</th></tr></thead><tbody></tbody></table>
+      </div>
+      <div class="panel">
         <h2>Motor de decisión por riesgo <span class="badge benigno">modo sombra — no gatea nada real</span></h2>
         <p class="hint">Puntaje de riesgo calculado en tiempo real para cada clic en un ataque, a partir del comportamiento de mouse/teclado (TG §8.2.5). Es puramente informativo: la columna "el aviso habría salido" compara el puntaje con el umbral de la campaña (paso 2), pero <strong>no es lo que decidió</strong> si el participante vio el aviso de verdad — esa decisión sigue dependiendo solo de la probabilidad configurada arriba.</p>
         <table id="riskTable"><thead><tr><th>Grupo</th><th>Ataques</th><th>Puntuados</th><th>Con error</th><th>Riesgo promedio</th><th>El aviso habría salido (sombra)</th><th>El aviso salió de verdad</th></tr></thead><tbody></tbody></table>

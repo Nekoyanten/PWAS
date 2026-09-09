@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { query } from "../db.js";
 import { requireAdmin } from "../middleware/requireAdmin.js";
+import { recomputeSessionFeatures } from "../lib/behaviorFeatures.js";
 
 export const dashboardRouter = Router();
 
@@ -115,6 +116,62 @@ dashboardRouter.get("/risk-summary", requireAdmin, async (req, res) => {
     params
   );
   res.json({ por_grupo: result.rows });
+});
+
+// Etiquetado fino (Tabla 1 §8.2.1, módulo 7, migración 008): recalcula y
+// persiste en `behavior_session_features` las features REALES por sesión
+// (AUC/SE/MD de mouse, latencias de tecleo, z-scores contra calibración) --
+// ver apps/api/src/lib/behaviorFeatures.js para el porqué de que esto sea
+// un job por lote (POST, a pedido) y no algo automático en cada evento.
+// Body opcional {campaign_id}: sin él, recalcula TODAS las sesiones de la
+// base (igual alcance que una corrida de `python3 -m src.evaluate`); con
+// él, solo las de esa campaña -- útil para no esperar por sesiones de otras
+// campañas mientras se analiza una en curso.
+dashboardRouter.post("/recompute-features", requireAdmin, async (req, res) => {
+  try {
+    const campaignId = typeof req.body?.campaign_id === "string" ? req.body.campaign_id : undefined;
+    const result = await recomputeSessionFeatures({ campaignId });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: "no se pudieron recalcular las features", detail: err.message });
+  }
+});
+
+// Resumen de `behavior_session_features`, agregado por fase -- para ver de
+// un vistazo si el etiquetado fino está al día (cuántas sesiones tienen
+// features calculadas frente al total en `behavior_sessions`) y un promedio
+// simple de las features más leídas, sin exponer una fila por participante.
+dashboardRouter.get("/features-summary", requireAdmin, async (req, res) => {
+  const params = [];
+  let where = "";
+  if (req.query.campaign_id) {
+    params.push(req.query.campaign_id);
+    where = `WHERE pc.campaign_id = $${params.length}`;
+  }
+  const result = await query(
+    `WITH sess AS (
+       SELECT bs.id, bs.phase, bs.participant_campaign_id
+       FROM behavior_sessions bs
+       JOIN participant_campaign pc ON pc.id = bs.participant_campaign_id
+       ${where}
+     )
+     SELECT sess.phase,
+            COUNT(*)::int AS sesiones_totales,
+            COUNT(f.session_id)::int AS con_features,
+            ROUND(AVG(f.mouse_auc)::numeric, 6)              AS mouse_auc_promedio,
+            ROUND(AVG(f.mouse_mean_velocity)::numeric, 6)    AS mouse_velocidad_promedio,
+            ROUND(AVG(f.key_mean_dwell_ms)::numeric, 2)      AS tecleo_dwell_promedio_ms,
+            ROUND(AVG(f.key_mean_flight_ms)::numeric, 2)     AS tecleo_flight_promedio_ms,
+            COUNT(*) FILTER (WHERE f.baseline_z_source = 'personal')::int    AS con_linea_base_personal,
+            COUNT(*) FILTER (WHERE f.baseline_z_source = 'poblacional')::int AS con_linea_base_poblacional,
+            MAX(f.computed_at) AS ultimo_calculo
+     FROM sess
+     LEFT JOIN behavior_session_features f ON f.session_id = sess.id
+     GROUP BY sess.phase
+     ORDER BY sess.phase`,
+    params
+  );
+  res.json({ por_fase: result.rows });
 });
 
 // Resumen ejecutivo de una sola llamada — pensado para poblar el dashboard

@@ -472,8 +472,52 @@ async function loadResults() {
     $("#resCards").innerHTML = cards.map((c) => `<div class="card"><div class="value">${c.v}</div><div class="label">${c.l}</div></div>`).join("");
   } catch (e) { $("#resCards").innerHTML = `<p class="hint">Error: ${esc(e.message)}</p>`; }
   loadBehaviorSummary();
+  loadFeaturesSummary();
   loadRiskSummary();
 }
+
+/* -------- Features por sesión (etiquetado fino) -------- */
+async function loadFeaturesSummary() {
+  const tbody = $("#featuresTable tbody");
+  if (!CURRENT_CAMP) { tbody.innerHTML = `<tr><td colspan="8" class="hint">Elige una campaña en el paso 2.</td></tr>`; return; }
+  try {
+    const { por_fase } = await api("GET", `/api/dashboard/features-summary?campaign_id=${CURRENT_CAMP}`);
+    tbody.innerHTML = por_fase.length
+      ? por_fase.map((r) => `<tr>
+          <td>${esc(PHASE_LABEL[r.phase] || r.phase)}</td>
+          <td>${r.sesiones_totales}</td><td>${r.con_features}</td>
+          <td>${r.mouse_auc_promedio != null ? r.mouse_auc_promedio : "—"}</td>
+          <td>${r.mouse_velocidad_promedio != null ? r.mouse_velocidad_promedio : "—"}</td>
+          <td>${r.tecleo_dwell_promedio_ms != null ? Math.round(r.tecleo_dwell_promedio_ms) + "ms" : "—"}</td>
+          <td>${r.con_linea_base_personal}</td>
+          <td>${r.con_linea_base_poblacional}</td>
+        </tr>`).join("")
+      : `<tr><td colspan="8" class="hint">Todavía no hay captura registrada para esta campaña.</td></tr>`;
+  } catch (e) { tbody.innerHTML = `<tr><td colspan="8" class="hint">Error: ${esc(e.message)}</td></tr>`; }
+}
+$("#recomputeFeaturesBtn").addEventListener("click", async () => {
+  if (!CURRENT_CAMP) return alert("Elige una campaña en el paso 2.");
+  $("#featuresMsg").textContent = "Calculando…";
+  try {
+    const r = await api("POST", "/api/dashboard/recompute-features", { campaign_id: CURRENT_CAMP });
+    $("#featuresMsg").textContent = `Calculadas ${r.computed} sesiones ✓`;
+    loadFeaturesSummary();
+  } catch (e) { $("#featuresMsg").textContent = "Error: " + e.message; }
+});
+$("#downloadFeaturesBtn").addEventListener("click", async () => {
+  if (!CURRENT_CAMP) return alert("Elige una campaña en el paso 2.");
+  $("#featuresMsg").textContent = "Generando…";
+  try {
+    const res = await fetch(`/api/export/session-features.csv?campaign_id=${CURRENT_CAMP}`, { headers: { "x-api-key": KEY } });
+    if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || `HTTP ${res.status}`); }
+    const blob = await res.blob();
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `features_por_sesion_${currentCampaign()?.name || CURRENT_CAMP}.csv`.replace(/[^\w.-]+/g, "_");
+    a.click();
+    $("#featuresMsg").textContent = "Listo ✓";
+  } catch (e) { $("#featuresMsg").textContent = "Error: " + e.message; }
+});
 
 /* -------- Motor de decisión por riesgo (modo sombra) -------- */
 async function loadRiskSummary() {
