@@ -141,6 +141,33 @@ button{font:inherit}
 .reader .bd{padding:1.35rem 1.5rem;font-size:.95rem;line-height:1.65;color:var(--ink-2)}
 .reader .bd p{margin:.2rem 0 .9rem}
 .reader .actions{display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;padding:0 1.5rem 1.45rem}
+.quick-replies{padding:0 1.5rem 1.45rem;display:flex;gap:.5rem;flex-wrap:wrap;align-items:center}
+.quick-replies .qr-label{font-size:.78rem;color:var(--muted);width:100%;margin-bottom:.15rem}
+
+/* ---------- tableros (multi-board, migración 010) ---------- */
+.board-tabs{display:flex;gap:.4rem;flex-wrap:wrap;align-items:center;margin-bottom:.9rem}
+.board-tab{padding:.4rem .85rem;border-radius:20px;border:1px solid var(--line);background:var(--surface);font-size:.82rem;font-weight:600;color:var(--muted);cursor:pointer}
+.board-tab.active{background:var(--brand-tint);color:var(--brand-strong);border-color:var(--brand-tint)}
+.board-tab-new{padding:.4rem .7rem;border-radius:20px;border:1px dashed var(--line);background:transparent;font-size:.82rem;color:var(--muted);cursor:pointer;display:inline-flex;align-items:center;gap:.3rem}
+.board-tab-new svg{width:14px;height:14px}
+.responsible-select{width:100%;margin-top:.4rem;font-size:.78rem;padding:.3rem .45rem;border:1px solid var(--line);border-radius:7px;background:#fff}
+.tcard .desc{font-size:.8rem;color:var(--muted);margin-top:.25rem;line-height:1.4}
+.new-board-form{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:.7rem;margin-bottom:.9rem}
+.new-board-form input,.new-board-form select{padding:.4rem .55rem;border:1px solid var(--line);border-radius:7px;font-size:.85rem}
+
+/* ---------- chat (migración 010) ---------- */
+.chat-wrap{max-width:640px;margin:0 auto;display:flex;flex-direction:column;height:calc(100vh - 160px)}
+.chat-scroll{flex:1;overflow-y:auto;padding:.5rem .2rem;display:flex;flex-direction:column;gap:.55rem}
+.bubble{max-width:75%;padding:.55rem .8rem;border-radius:14px;font-size:.9rem;line-height:1.45}
+.bubble-row{display:flex;gap:.5rem;align-items:flex-end}
+.bubble-row.me{flex-direction:row-reverse}
+.bubble.them{background:var(--surface);border:1px solid var(--line);border-bottom-left-radius:4px}
+.bubble.me{background:var(--brand);color:#fff;border-bottom-right-radius:4px}
+.bubble .sender{font-size:.72rem;font-weight:650;color:var(--brand);margin-bottom:.15rem}
+.bubble.attack{border:1px solid var(--warn);background:#fff8f7}
+.bubble .attack-subject{font-weight:650;margin-bottom:.25rem}
+.chat-input{display:flex;gap:.5rem;padding-top:.7rem;border-top:1px solid var(--line)}
+.chat-input textarea{flex:1;resize:none;padding:.6rem .75rem;border:1px solid var(--line);border-radius:10px;font:inherit;font-size:.9rem}
 
 /* ---------- centered pages ---------- */
 .plate{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:2rem 1.25rem}
@@ -211,6 +238,8 @@ const I = {
   pencil: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>`,
   trash: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="m19 6-1 14H6L5 6"/></svg>`,
   plus: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>`,
+  chat: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>`,
+  send: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>`,
 };
 const AV_COLORS = ["#4f46e5", "#0f9d7a", "#d97706", "#db2777", "#0284c7"];
 const avatar = (name) => {
@@ -225,8 +254,9 @@ const avatar = (name) => {
 // que vuelve a /app?v=<vista>.
 const VIEWS = [
   { key: "inicio", icon: I.home, label: "Inicio", title: "Inicio" },
-  { key: "tablero", icon: I.board, label: "Mi tablero", title: "Mi tablero" },
+  { key: "tablero", icon: I.board, label: "Mis tableros", title: "Mis tableros" },
   { key: "bandeja", icon: I.inbox, label: "Bandeja", title: "Bandeja" },
+  { key: "chat", icon: I.chat, label: "Chat de equipo", title: "Chat de equipo" },
   { key: "agenda", icon: I.cal, label: "Agenda", title: "Agenda" },
   { key: "equipo", icon: I.team, label: "Equipo", title: "Equipo" },
 ];
@@ -396,25 +426,14 @@ export function renderCalibration(token) {
 ${behaviorCaptureTag(token, "calibration")}`);
 }
 
-export function renderApp(token, { inbox, view }) {
+export function renderApp(token, { inbox, view, boardsData, contacts, boardTemplates }) {
   const t = encodeURIComponent(token);
   const unread = inbox.filter((m) => m.unread).length;
   const active = isView(view) ? view : DEFAULT_VIEW;
-
-  // Tablero inicial. A partir de aquí lo gestiona Alpine.js en el navegador del
-  // participante y se guarda SOLO en su localStorage (nunca llega al servidor:
-  // ver nota de privacidad de schema.sql). El admin no ve estas tarjetas.
-  const defaultBoard = [
-    { id: "todo", title: "Por hacer", cards: [
-      { id: "s1", title: "Preparar el informe semanal del proyecto", who: "María L.", due: "Hoy", overdue: true, labels: [{ cls: "doc", text: "documentos" }] },
-      { id: "s2", title: "Revisar las tarjetas pendientes del sprint", who: "Tú", due: "Mié", labels: [{ cls: "dev", text: "desarrollo" }] },
-      { id: "s3", title: "Responder los mensajes del canal del equipo", who: "Tú", labels: [] } ] },
-    { id: "doing", title: "En progreso", cards: [
-      { id: "s4", title: "Actualizar el tablero de seguimiento", who: "Tú", due: "Jue", labels: [{ cls: "dev", text: "desarrollo" }] },
-      { id: "s5", title: "Agendar la reunión de seguimiento mensual", who: "Carlos R.", labels: [{ cls: "ops", text: "operaciones" }] } ] },
-    { id: "done", title: "Hecho", cards: [
-      { id: "s6", title: "Enviar el acta de la reunión anterior", who: "Tú", labels: [{ cls: "doc", text: "documentos" }] } ] },
-  ];
+  const boardsInit = boardsData || [];
+  const contactsInit = contacts || [];
+  const boardTemplatesInit = boardTemplates || [];
+  const initialTaskCount = boardsInit.reduce((n, b) => n + b.columns.reduce((m, c) => m + c.tasks.length, 0), 0);
 
   const rows = inboxRowsHtml(inbox, t);
   const emptyInbox = '<div class="empty">No tienes mensajes.</div>';
@@ -436,7 +455,7 @@ export function renderApp(token, { inbox, view }) {
       <h2>Hola 👋</h2>
       <p class="hint">Bienvenido/a a TaskFlow. Este es tu resumen de hoy.</p>
       <div class="home-cards">
-        <div class="hc"><div class="hc-n" data-tfcount>6</div><div class="hc-l">tarjetas en tu tablero</div></div>
+        <div class="hc"><div class="hc-n" data-tfcount>${initialTaskCount}</div><div class="hc-l">tarjetas en tus tableros</div></div>
         <div class="hc"><div class="hc-n" data-ibcount>${unread}</div><div class="hc-l">mensajes sin leer</div></div>
         <div class="hc"><div class="hc-n">4</div><div class="hc-l">reuniones esta semana</div></div>
       </div>
@@ -448,82 +467,135 @@ export function renderApp(token, { inbox, view }) {
 
   const viewTablero = `
     <div class="workspace">
-      <div class="board-area" x-data="tfBoard()">
-        <div class="board-head">
-          <h2>Tareas del equipo</h2>
-          <span class="pill" x-text="count + (count === 1 ? ' tarjeta' : ' tarjetas')">6 tarjetas</span>
+      <div class="board-area" x-data="tfBoards()">
+        <div class="board-tabs" x-show="boards.length">
+          <template x-for="b in boards" :key="b.id">
+            <button type="button" class="board-tab" :class="{active: activeBoard === b.id}" @click="selectBoard(b.id)" x-text="b.name"></button>
+          </template>
+          <button type="button" class="board-tab-new" @click="newBoardOpen = !newBoardOpen">${I.plus}<span>Nuevo tablero</span></button>
         </div>
-        <div class="columns" x-cloak>
-          <template x-for="col in columns" :key="col.id">
-            <div class="col" :class="{ 'col-over': overCol === col.id }"
-                 @dragover.prevent="overCol = col.id" @dragleave="overCol = null" @drop.prevent="drop(col.id)">
-              <div class="col-head"><span class="t" x-text="col.title"></span><span class="n" x-text="col.cards.length"></span></div>
+        <template x-if="newBoardOpen">
+          <form class="new-board-form" @submit.prevent="createBoard()">
+            <input type="text" x-model="newBoardName" placeholder="Nombre del tablero (ej. Desarrollo de aplicativo verde)" style="flex:1;min-width:220px" required>
+            <select x-model="newBoardTemplate" x-show="boardTemplates.length">
+              <option value="">Tablero en blanco</option>
+              <template x-for="bt in boardTemplates" :key="bt.id"><option :value="bt.id" x-text="bt.name"></option></template>
+            </select>
+            <button class="btn tiny" type="submit">Crear</button>
+            <button class="btn tiny ghost" type="button" @click="newBoardOpen = false">Cancelar</button>
+          </form>
+        </template>
+        <template x-if="!boards.length && !newBoardOpen">
+          <div class="col-empty" style="width:auto">Todavía no tienes tableros. Crea el primero con "Nuevo tablero".</div>
+        </template>
+        <template x-if="board">
+          <div>
+            <div class="board-head">
+              <h2 x-text="board.name"></h2>
+              <span class="pill" x-text="count + (count === 1 ? ' tarjeta' : ' tarjetas')"></span>
+            </div>
+            <div class="columns" x-cloak>
+              <template x-for="col in board.columns" :key="col.id">
+                <div class="col" :class="{ 'col-over': overCol === col.id }"
+                     @dragover.prevent="overCol = col.id" @dragleave="overCol = null" @drop.prevent="drop(col.id)">
+                  <div class="col-head"><span class="t" x-text="col.name"></span><span class="n" x-text="col.tasks.length"></span></div>
 
-              <template x-for="card in col.cards" :key="card.id">
-                <div class="tcard" draggable="true"
-                     @dragstart="drag(card.id, col.id)" @dragend="dragId = null; overCol = null">
-                  <template x-if="editId === card.id">
-                    <form class="tcard-edit" @submit.prevent="saveEdit(card)">
-                      <textarea x-model="editText" x-ref="edit" rows="2"
-                                @keydown.escape="editId = null" @keydown.enter.prevent="saveEdit(card)"></textarea>
+                  <template x-for="task in col.tasks" :key="task.id">
+                    <div class="tcard" draggable="true"
+                         @dragstart="drag(task.id, col.id)" @dragend="dragId = null; overCol = null">
+                      <template x-if="editId === task.id">
+                        <form class="tcard-edit" @submit.prevent="saveEdit(task)">
+                          <textarea x-model="editTitle" x-ref="edit" rows="2" placeholder="Título de la tarea"
+                                    @keydown.escape="editId = null"></textarea>
+                          <textarea x-model="editDesc" rows="2" placeholder="Descripción (qué hace esta tarea)"></textarea>
+                          <select class="responsible-select" x-model="editResp">
+                            <option value="">Sin responsable</option>
+                            <template x-for="c in contacts" :key="c.id"><option :value="c.id" x-text="c.display_name + (c.role_label ? ' · ' + c.role_label : '')"></option></template>
+                          </select>
+                          <div class="tcard-actions">
+                            <button class="btn tiny" type="submit">Guardar</button>
+                            <button class="btn tiny ghost" type="button" @click="editId = null">Cancelar</button>
+                          </div>
+                        </form>
+                      </template>
+                      <template x-if="editId !== task.id">
+                        <div>
+                          <div class="tt" x-text="task.title" @dblclick="startEdit(task)" title="Doble clic para editar"></div>
+                          <div class="desc" x-show="task.description" x-text="task.description"></div>
+                          <div class="foot">
+                            <span class="meta" x-show="task.responsible_contact_id">
+                              <span class="avatar" :style="{ background: task.responsible_color || '#9aa1ad' }" x-text="(task.responsible_name || '?').split(' ').slice(0,2).map(w => w[0]).join('').toUpperCase()"></span>
+                              <span x-text="task.responsible_name"></span>
+                            </span>
+                            <span class="meta" x-show="!task.responsible_contact_id" style="color:var(--faint)">Sin responsable</span>
+                            <span class="tcard-tools">
+                              <button class="tcard-btn" type="button" @click="startEdit(task)" title="Editar">${I.pencil}</button>
+                              <button class="tcard-btn" type="button" @click="removeTask(col.id, task.id)" title="Eliminar">${I.trash}</button>
+                            </span>
+                          </div>
+                        </div>
+                      </template>
+                    </div>
+                  </template>
+
+                  <template x-if="col.tasks.length === 0 && addCol !== col.id">
+                    <div class="col-empty">Arrastra tarjetas aquí o añade una nueva.</div>
+                  </template>
+
+                  <template x-if="addCol === col.id">
+                    <form class="tcard tcard-add" @submit.prevent="addTask(col.id)">
+                      <textarea x-model="addTitle" x-ref="add" rows="2" placeholder="Título de la tarea…"
+                                @keydown.escape="addCol = null"></textarea>
+                      <textarea x-model="addDesc" rows="2" placeholder="Descripción (opcional)"></textarea>
+                      <select class="responsible-select" x-model="addResp">
+                        <option value="">Sin responsable</option>
+                        <template x-for="c in contacts" :key="c.id"><option :value="c.id" x-text="c.display_name + (c.role_label ? ' · ' + c.role_label : '')"></option></template>
+                      </select>
                       <div class="tcard-actions">
-                        <button class="btn tiny" type="submit">Guardar</button>
-                        <button class="btn tiny ghost" type="button" @click="editId = null">Cancelar</button>
+                        <button class="btn tiny" type="submit">Añadir tarjeta</button>
+                        <button class="btn tiny ghost" type="button" @click="addCol = null">Cancelar</button>
                       </div>
                     </form>
                   </template>
-                  <template x-if="editId !== card.id">
-                    <div>
-                      <div class="tt" x-text="card.title" @dblclick="startEdit(card)" title="Doble clic para editar"></div>
-                      <div class="labels" x-show="(card.labels && card.labels.length) || card.due">
-                        <template x-for="lab in (card.labels || [])" :key="lab.text">
-                          <span class="lab" :class="lab.cls" x-text="lab.text"></span>
-                        </template>
-                        <template x-if="card.due">
-                          <span class="lab" :class="card.overdue ? 'due' : 'ops'" x-text="card.due"></span>
-                        </template>
-                      </div>
-                      <div class="foot">
-                        <span class="meta">
-                          <span class="avatar" :style="{ background: avatar(card.who).color }" x-text="avatar(card.who).init"></span>
-                          <span x-text="card.who"></span>
-                        </span>
-                        <span class="tcard-tools">
-                          <button class="tcard-btn" type="button" @click="startEdit(card)" title="Editar">${I.pencil}</button>
-                          <button class="tcard-btn" type="button" @click="removeCard(col.id, card.id)" title="Eliminar">${I.trash}</button>
-                        </span>
-                      </div>
-                    </div>
-                  </template>
+
+                  <button class="col-add" type="button" x-show="addCol !== col.id" @click="startAdd(col.id)">
+                    ${I.plus}<span>Añadir una tarjeta</span>
+                  </button>
                 </div>
               </template>
-
-              <template x-if="col.cards.length === 0 && addCol !== col.id">
-                <div class="col-empty">Arrastra tarjetas aquí o añade una nueva.</div>
-              </template>
-
-              <template x-if="addCol === col.id">
-                <form class="tcard tcard-add" @submit.prevent="addCard(col.id)">
-                  <textarea x-model="addText" x-ref="add" rows="2" placeholder="Escribe una tarea…"
-                            @keydown.escape="addCol = null" @keydown.enter.prevent="addCard(col.id)"></textarea>
-                  <div class="tcard-actions">
-                    <button class="btn tiny" type="submit">Añadir tarjeta</button>
-                    <button class="btn tiny ghost" type="button" @click="addCol = null">Cancelar</button>
-                  </div>
-                </form>
-              </template>
-
-              <button class="col-add" type="button" x-show="addCol !== col.id" @click="startAdd(col.id)">
-                ${I.plus}<span>Añadir una tarjeta</span>
-              </button>
             </div>
-          </template>
-        </div>
+          </div>
+        </template>
       </div>
       <aside class="inbox" id="inbox">
         <h3>${I.inbox}<span>Bandeja</span><span class="ib-badge" data-ibbadge${unread ? "" : " hidden"}>${unread || ""}</span></h3>
         <div data-ibrows>${rows || emptyInbox}</div>
       </aside>
+    </div>`;
+
+  const viewChat = `
+    <div class="chat-wrap" x-data="tfChat()">
+      <div class="chat-scroll" x-ref="scroll">
+        <template x-if="!messages.length"><div class="col-empty" style="width:auto">Cargando conversación…</div></template>
+        <template x-for="m in messages" :key="m.id">
+          <div class="bubble-row" :class="{me: m.kind === 'reply'}">
+            <div class="bubble" :class="{them: m.kind !== 'reply', me: m.kind === 'reply', attack: m.is_attack}">
+              <div class="sender" x-show="m.kind !== 'reply' && m.sender_name" x-text="m.sender_name"></div>
+              <template x-if="m.kind === 'attack'">
+                <div>
+                  <div class="attack-subject" x-text="m.attack_subject"></div>
+                  <a class="btn tiny" :href="'/t/${t}/d/' + m.delivery_id" x-text="m.attack_cta || 'Abrir'"></a>
+                </div>
+              </template>
+              <template x-if="m.kind !== 'attack'"><span x-text="m.body"></span></template>
+            </div>
+          </div>
+        </template>
+      </div>
+      <form class="chat-input" @submit.prevent="send()">
+        <textarea x-model="draft" rows="1" placeholder="Escribe un mensaje al equipo…" @keydown.enter.prevent="send()"></textarea>
+        <button class="btn" type="submit">${I.send}</button>
+      </form>
     </div>`;
 
   const viewBandeja = `
@@ -562,6 +634,7 @@ export function renderApp(token, { inbox, view }) {
       ${panel("inicio", viewInicio)}
       ${panel("tablero", viewTablero)}
       ${panel("bandeja", viewBandeja)}
+      ${panel("chat", viewChat)}
       ${panel("agenda", viewAgenda)}
       ${panel("equipo", viewEquipo)}
     </div>
@@ -569,65 +642,131 @@ export function renderApp(token, { inbox, view }) {
 </div>
 <script>
 var TF=${JSON.stringify(token)};
+var TF_BOARDS=${JSON.stringify(boardsInit)};
+var TF_CONTACTS=${JSON.stringify(contactsInit)};
+var TF_BOARD_TEMPLATES=${JSON.stringify(boardTemplatesInit)};
 function tfPing(){try{navigator.sendBeacon('/t/'+encodeURIComponent(TF)+'/usability')}catch(e){}}
+function tfApi(path, opts){
+  opts = opts || {};
+  opts.headers = Object.assign({'Content-Type':'application/json'}, opts.headers||{});
+  return fetch('/t/'+encodeURIComponent(TF)+path, opts).then(function(r){ return r.json(); });
+}
 
-// --- Tablero kanban (Alpine.js). Estado SOLO en localStorage del participante:
-//     crear / editar / borrar / arrastrar tarjetas. Nunca se envía al servidor. ---
-function tfBoard(){
-  var LS='tf_board_'+TF;
-  var DEFAULT=${JSON.stringify(defaultBoard)};
-  function uid(){ return 'k'+Math.random().toString(36).slice(2,9)+Date.now().toString(36).slice(-3); }
+// --- Tableros (Alpine.js) -- migración 010: estado real en el servidor
+//     (antes: solo localStorage, invisible para el equipo). Los datos
+//     iniciales vienen server-side (TF_BOARDS/TF_CONTACTS/TF_BOARD_TEMPLATES,
+//     igual que la bandeja); cada mutación llama al backend y actualiza el
+//     estado local con la respuesta, en vez de recargar todo el tablero. ---
+function tfBoards(){
   return {
-    columns: [], dragId: null, dragFrom: null, overCol: null,
-    editId: null, editText: '', addCol: null, addText: '',
-    get count(){ return this.columns.reduce(function(n,c){ return n + c.cards.length; }, 0); },
-    init(){
-      var saved=null;
-      try{ saved=JSON.parse(localStorage.getItem(LS)); }catch(e){}
-      this.columns=(saved && Array.isArray(saved) && saved.length) ? saved : JSON.parse(JSON.stringify(DEFAULT));
-      this.sync();
-      this.$watch('columns', function(){ this.sync(); }.bind(this));
-    },
+    boards: TF_BOARDS, contacts: TF_CONTACTS, boardTemplates: TF_BOARD_TEMPLATES,
+    activeBoard: TF_BOARDS.length ? TF_BOARDS[0].id : null,
+    dragId: null, dragFrom: null, overCol: null,
+    editId: null, editTitle: '', editDesc: '', editResp: '',
+    addCol: null, addTitle: '', addDesc: '', addResp: '',
+    newBoardOpen: false, newBoardName: '', newBoardTemplate: '',
+    get board(){ var self=this; return this.boards.find(function(b){ return b.id===self.activeBoard; }) || null; },
+    get count(){ var b=this.board; if(!b) return 0; return b.columns.reduce(function(n,c){ return n+c.tasks.length; }, 0); },
+    init(){ this.sync(); },
     sync(){
-      try{ localStorage.setItem(LS, JSON.stringify(this.columns)); }catch(e){}
+      tfPing();
       var n=this.count;
       document.querySelectorAll('[data-tfcount]').forEach(function(el){ el.textContent=n; });
     },
-    avatar(name){
-      var s=String(name||'?'), parts=s.split(' ').filter(Boolean);
-      var init=(parts.slice(0,2).map(function(w){ return w[0]||''; }).join('')||'?').toUpperCase();
-      var h=0; for(var i=0;i<s.length;i++){ h=(h*31 + s.charCodeAt(i))>>>0; }
-      var c=['#4f46e5','#0f9d7a','#d97706','#db2777','#0284c7'];
-      return { init: init, color: c[h % c.length] };
+    selectBoard(id){ this.activeBoard=id; },
+    createBoard(){
+      var name=(this.newBoardName||'').trim(); if(!name) return;
+      var self=this;
+      tfApi('/boards', { method:'POST', body: JSON.stringify({ name: name, template_id: this.newBoardTemplate || null }) })
+        .then(function(data){
+          if(!data.board) return;
+          return tfApi('/boards.json').then(function(d){
+            self.boards = d.boards || [];
+            self.activeBoard = data.board.id;
+            self.newBoardOpen=false; self.newBoardName=''; self.newBoardTemplate='';
+            self.sync();
+          });
+        });
     },
-    startAdd(colId){ this.editId=null; this.addCol=colId; this.addText=''; this.$nextTick(function(){ this.$refs.add && this.$refs.add.focus(); }.bind(this)); },
-    addCard(colId){
-      var text=(this.addText||'').trim(); if(!text) return;
-      var col=this.columns.find(function(c){ return c.id===colId; }); if(!col) return;
-      col.cards.push({ id: uid(), title: text, who: 'Tú', labels: [], due: null });
-      this.addText=''; this.addCol=null; this.sync(); tfPing();
+    startAdd(colId){ this.editId=null; this.addCol=colId; this.addTitle=''; this.addDesc=''; this.addResp=''; this.$nextTick(function(){ this.$refs.add && this.$refs.add.focus(); }.bind(this)); },
+    addTask(colId){
+      var title=(this.addTitle||'').trim(); if(!title) return;
+      var self=this, boardId=this.activeBoard;
+      tfApi('/boards/'+boardId+'/tasks', { method:'POST', body: JSON.stringify({ column_id: colId, title: title, description: this.addDesc||null, responsible_contact_id: this.addResp||null }) })
+        .then(function(data){
+          if(!data.task) return;
+          var col=self.board.columns.find(function(c){ return c.id===colId; });
+          if(col) col.tasks.push(data.task);
+          self.addCol=null; self.addTitle=''; self.addDesc=''; self.addResp=''; self.sync();
+        });
     },
-    startEdit(card){ this.addCol=null; this.editId=card.id; this.editText=card.title; this.$nextTick(function(){ this.$refs.edit && this.$refs.edit.focus(); }.bind(this)); },
-    saveEdit(card){ var v=(this.editText||'').trim(); if(v) card.title=v; this.editId=null; this.sync(); tfPing(); },
-    removeCard(colId, cardId){
-      var col=this.columns.find(function(c){ return c.id===colId; }); if(!col) return;
-      col.cards=col.cards.filter(function(c){ return c.id!==cardId; });
-      if(this.editId===cardId) this.editId=null;
-      this.sync(); tfPing();
+    startEdit(task){ this.addCol=null; this.editId=task.id; this.editTitle=task.title; this.editDesc=task.description||''; this.editResp=task.responsible_contact_id||''; this.$nextTick(function(){ this.$refs.edit && this.$refs.edit.focus(); }.bind(this)); },
+    saveEdit(task){
+      var self=this, boardId=this.activeBoard;
+      tfApi('/boards/'+boardId+'/tasks/'+task.id, { method:'PATCH', body: JSON.stringify({ title: this.editTitle, description: this.editDesc, responsible_contact_id: this.editResp||null }) })
+        .then(function(data){
+          if(data.task){
+            task.title=data.task.title; task.description=data.task.description; task.responsible_contact_id=data.task.responsible_contact_id;
+            var c=self.contacts.find(function(x){ return x.id===task.responsible_contact_id; });
+            task.responsible_name = c ? c.display_name : null; task.responsible_color = c ? c.avatar_color : null;
+          }
+          self.editId=null; self.sync();
+        });
     },
-    drag(cardId, fromId){ this.dragId=cardId; this.dragFrom=fromId; },
-    drop(toId){
+    removeTask(colId, taskId){
+      var self=this, boardId=this.activeBoard;
+      tfApi('/boards/'+boardId+'/tasks/'+taskId, { method:'DELETE' }).then(function(){
+        var col=self.board.columns.find(function(c){ return c.id===colId; });
+        if(col) col.tasks = col.tasks.filter(function(t){ return t.id!==taskId; });
+        if(self.editId===taskId) self.editId=null;
+        self.sync();
+      });
+    },
+    drag(taskId, fromColId){ this.dragId=taskId; this.dragFrom=fromColId; },
+    drop(toColId){
       this.overCol=null;
       var id=this.dragId, from=this.dragFrom;
       this.dragId=null; this.dragFrom=null;
-      if(!id || from===toId) return;
-      var src=this.columns.find(function(c){ return c.id===from; });
-      var dst=this.columns.find(function(c){ return c.id===toId; });
+      if(!id || from===toColId) return;
+      var b=this.board; if(!b) return;
+      var src=b.columns.find(function(c){ return c.id===from; });
+      var dst=b.columns.find(function(c){ return c.id===toColId; });
       if(!src || !dst) return;
-      var i=src.cards.findIndex(function(c){ return c.id===id; });
+      var i=src.tasks.findIndex(function(t){ return t.id===id; });
       if(i<0) return;
-      dst.cards.push(src.cards.splice(i,1)[0]);
-      this.sync(); tfPing();
+      var task=src.tasks.splice(i,1)[0];
+      dst.tasks.push(task);
+      this.sync();
+      tfApi('/boards/'+this.activeBoard+'/tasks/'+id, { method:'PATCH', body: JSON.stringify({ column_id: toColId }) });
+    },
+  };
+}
+
+// --- Chat persistente (Alpine.js) -- migración 010: hilo real por
+//     participante, con conversación ambiente (guion del admin) + ataques
+//     inyectados + lo que el participante escribe. Se instancia en el
+//     servidor la primera vez que se pide (ver GET /:token/chat.json). ---
+function tfChat(){
+  return {
+    messages: [], draft: '', loaded: false,
+    init(){
+      var self=this;
+      tfApi('/chat.json').then(function(d){
+        self.messages = d.messages || [];
+        self.loaded = true;
+        self.$nextTick(function(){ self.scrollDown(); });
+      });
+    },
+    scrollDown(){ if(this.$refs.scroll) this.$refs.scroll.scrollTop = this.$refs.scroll.scrollHeight; },
+    send(){
+      var body=(this.draft||'').trim(); if(!body) return;
+      var self=this;
+      tfApi('/chat/reply', { method:'POST', body: JSON.stringify({ body: body }) }).then(function(data){
+        if(data.message) self.messages.push(data.message);
+        self.draft='';
+        tfPing();
+        self.$nextTick(function(){ self.scrollDown(); });
+      });
     },
   };
 }
@@ -754,6 +893,19 @@ export function renderMessage(token, msg) {
   const d = encodeURIComponent(msg.deliveryId);
   const isAttack = msg.is_attack;
   const bodyHtml = isAttack ? sanitizeMessageHtml(msg.body) : `<p>${escapeHtml(msg.body).replace(/\n/g, "<br>")}</p>`;
+  // Árbol de respuestas (migración 010): botones de respuesta rápida
+  // prediseñados por el admin (message_branches), junto a "Abrir"/"Reportar".
+  // Elegir uno crea el siguiente mensaje de la conversación -- ver
+  // POST /d/:deliveryId/branch. No es un chatbot que interprete texto libre:
+  // cada botón es una acción fija y auditable.
+  const replies = (msg.branches || []).length ? `
+    <div class="quick-replies">
+      <div class="qr-label">Responder:</div>
+      ${msg.branches.map((b) => `
+        <button class="btn ghost tiny" type="button" data-branch="${escapeHtml(b.action_key)}"
+          onclick="tfBranch('${d}', '${escapeHtml(b.action_key)}', this)">${escapeHtml(b.action_label)}</button>
+      `).join("")}
+    </div>` : "";
   const actions = isAttack ? `
     <div class="actions">
       <a class="btn" href="/t/${t}/d/${d}/go">${escapeHtml(msg.cta_label || "Abrir")}</a>
@@ -761,7 +913,7 @@ export function renderMessage(token, msg) {
         onclick="fetch('/t/${t}/d/${d}/report',{method:'POST'}).then(()=>{this.textContent='Reportado ✓';this.disabled=true})">
         Reportar como sospechoso
       </button>
-    </div>` : "";
+    </div>${replies}` : "";
 
   return shell(msg.subject, `
 <div class="app">
@@ -784,6 +936,18 @@ export function renderMessage(token, msg) {
     </div>
   </div>
 </div>
+<script>
+function tfBranch(deliveryId, actionKey, btn){
+  btn.disabled = true;
+  fetch('/t/${t}/d/'+deliveryId+'/branch', {
+    method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({action_key: actionKey})
+  }).then(function(r){ return r.json(); }).then(function(data){
+    if (data && data.error) { btn.disabled = false; alert(data.error); return; }
+    var box = btn.closest('.quick-replies');
+    if (box) box.innerHTML = '<div class="qr-label">Respondiste. Revisa tu bandeja o tu chat para ver la respuesta.</div>';
+  }).catch(function(){ btn.disabled = false; });
+}
+</script>
 ${behaviorCaptureTag(token, "message", msg.deliveryId)}`);
 }
 

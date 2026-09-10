@@ -1,73 +1,14 @@
 import { Router } from "express";
 import { query } from "../db.js";
 import { requireAdmin } from "../middleware/requireAdmin.js";
-import { hash32, mulberry32 } from "../lib/rng.js";
+import { resolveMessageFields, createDeliveryForParticipant } from "../lib/messageFactory.js";
 
 export const messagesRouter = Router();
 
-// Sorteo determinista y reproducible (mismo patrón que assignBalanced en
-// lib/rng.js) de si ESTE envío concreto muestra la intervención jolting.
-// Sembrado con seed de campaña + id del mensaje + id del participant_campaign
-// -> siempre el mismo resultado para el mismo trío, sin importar cuántas
-// veces se recalcule (auditable), y NO se vuelve a tirar en cada clic del
-// participante (eso vive en deliveries.jolting_roll, fijado una sola vez
-// aquí, al crear el delivery). Ver migración 006 para el porqué completo.
-function rollJolting(campaignSeed, messageId, participantCampaignId, probability) {
-  const rand = mulberry32(hash32(`${campaignSeed}:${messageId}:${participantCampaignId}:jolting`));
-  return rand() < Number(probability);
-}
-
-const KINDS = ["email", "task"];
-const LANDINGS = ["form", "permiso"];
-
-// Campos de un mensaje, resueltos desde una plantilla o desde el body directo.
-async function resolveMessageFields(body) {
-  if (body.template_id) {
-    const r = await query(`SELECT * FROM templates WHERE id = $1`, [body.template_id]);
-    if (r.rows.length === 0) return { error: "Plantilla no encontrada" };
-    const t = r.rows[0];
-    return {
-      fields: {
-        template_id: t.id,
-        kind: body.kind && KINDS.includes(body.kind) ? body.kind : t.kind,
-        is_attack: t.is_attack,
-        vector: t.is_attack ? t.vector : null,
-        sender_label: body.sender_label ?? t.sender_label,
-        subject: body.subject ?? t.subject_or_headline,
-        body: body.body ?? t.message_body,
-        cta_label: t.is_attack ? (body.cta_label ?? t.cta_label) : null,
-        landing_kind: t.is_attack ? t.landing_kind : null,
-        landing_config: t.is_attack ? t.landing_config : {},
-        // Por defecto TRUE (compatibilidad hacia atrás, migración 006): el
-        // admin lo desactiva explícitamente si quiere un ataque "silencioso"
-        // que nunca muestre el aviso, sin importar el grupo o la probabilidad
-        // de la campaña.
-        jolting_enabled: body.jolting_enabled === false ? false : true,
-      },
-    };
-  }
-  // mensaje libre
-  if (!body.subject) return { error: "Falta 'subject' (o 'template_id')" };
-  const isAttack = !!body.is_attack;
-  if (isAttack && !LANDINGS.includes(body.landing_kind)) {
-    return { error: `Un mensaje de ataque necesita landing_kind (${LANDINGS.join("|")})` };
-  }
-  return {
-    fields: {
-      template_id: null,
-      kind: KINDS.includes(body.kind) ? body.kind : "email",
-      is_attack: isAttack,
-      vector: isAttack ? (body.vector ?? null) : null,
-      sender_label: body.sender_label ?? null,
-      subject: body.subject,
-      body: body.body ?? null,
-      cta_label: isAttack ? (body.cta_label ?? "Abrir") : null,
-      landing_kind: isAttack ? body.landing_kind : null,
-      landing_config: isAttack ? (body.landing_config ?? {}) : {},
-      jolting_enabled: body.jolting_enabled === false ? false : true,
-    },
-  };
-}
+// rollJolting/resolveMessageFields ahora viven en lib/messageFactory.js —
+// migración 010 los comparte con la instanciación de guiones de chat y con
+// el árbol de respuestas (routes/tracking.js), que también necesitan crear
+// un delivery a partir de una plantilla para UN participante a la vez.
 
 messagesRouter.get("/campaigns/:id/messages", requireAdmin, async (req, res) => {
   const r = await query(
@@ -138,20 +79,12 @@ messagesRouter.post("/messages/:id/send", requireAdmin, async (req, res) => {
 
   let delivered = 0;
   for (const row of targets.rows) {
-    const roll = rollJolting(msg.campaign_seed, msg.id, row.id, msg.jolting_probability);
-    const d = await query(
-      `INSERT INTO deliveries (message_id, participant_campaign_id, jolting_roll)
-       VALUES ($1, $2, $3) ON CONFLICT (message_id, participant_campaign_id) DO NOTHING
-       RETURNING id`,
-      [msg.id, row.id, roll]
-    );
-    if (d.rows[0]) {
-      delivered++;
-      await query(
-        `INSERT INTO events (participant_campaign_id, delivery_id, event_type) VALUES ($1, $2, 'entregado')`,
-        [row.id, d.rows[0].id]
-      );
-    }
+    const d = await createDeliveryForParticipant({
+      message: { id: msg.id, jolting_probability: msg.jolting_probability },
+      campaignSeed: msg.campaign_seed,
+      participantCampaignId: row.id,
+    });
+    if (d) delivered++;
   }
   await query(`UPDATE campaigns SET status = 'en_curso' WHERE id = $1 AND status IN ('borrador','programada')`, [msg.campaign_id]);
   res.json({ delivered, targets: targets.rows.length, skipped: targets.rows.length - delivered });

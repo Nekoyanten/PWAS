@@ -7,6 +7,9 @@ import {
   renderJoltingInterstitial,
 } from "../lib/decoy.js";
 import { scoreAndStoreDeliveryRisk } from "../lib/riskScore.js";
+import { resolveMessageFields, insertMessage, createDeliveryForParticipant } from "../lib/messageFactory.js";
+import * as boards from "../lib/boards.js";
+import * as chat from "../lib/chat.js";
 
 export const trackingRouter = Router();
 
@@ -20,6 +23,7 @@ async function loadPC(token) {
     `SELECT pc.id, pc.participant_id, pc.campaign_id, pc.access_token,
             pc.session_started_at, pc.finished_at,
             pc.calibration_started_at, pc.calibration_completed_at,
+            pc.practice_username, pc.practice_password,
             p.consent_given, p.group_assignment,
             c.name AS campaign_name, c.status AS campaign_status
      FROM participant_campaign pc
@@ -70,7 +74,7 @@ async function interventionAlreadyShown(deliveryId) {
 async function loadDelivery(pcId, deliveryId) {
   const r = await query(
     `SELECT d.id AS delivery_id, d.delivered_at, d.jolting_roll,
-            m.id AS message_id, m.kind, m.is_attack, m.vector, m.sender_label,
+            m.id AS message_id, m.template_id, m.kind, m.is_attack, m.vector, m.sender_label,
             m.subject, m.body, m.cta_label, m.landing_kind, m.landing_config, m.jolting_enabled
      FROM deliveries d JOIN messages m ON m.id = d.message_id
      WHERE d.id = $1 AND d.participant_campaign_id = $2`,
@@ -205,7 +209,12 @@ trackingRouter.get("/:token/app", async (req, res) => {
     await query(`UPDATE participant_campaign SET session_started_at = now() WHERE id = $1 AND session_started_at IS NULL`, [pc.id]);
   }
   const inbox = await buildInbox(pc.id);
-  res.set(HTML).send(renderApp(pc.access_token, { inbox, view: req.query.v }));
+  const [boardsData, contacts, boardTemplates] = await Promise.all([
+    boards.loadBoards(pc.id),
+    query(`SELECT * FROM fictitious_contacts WHERE campaign_id = $1 ORDER BY display_name`, [pc.campaign_id]).then((r) => r.rows),
+    query(`SELECT id, name FROM board_templates WHERE campaign_id = $1 ORDER BY created_at`, [pc.campaign_id]).then((r) => r.rows),
+  ]);
+  res.set(HTML).send(renderApp(pc.access_token, { inbox, view: req.query.v, boardsData, contacts, boardTemplates }));
 });
 
 // Bandeja en JSON para el sondeo en vivo del tablero (sin recargar la página).
@@ -237,10 +246,16 @@ trackingRouter.get("/:token/d/:deliveryId", async (req, res) => {
   const d = await loadDelivery(pc.id, req.params.deliveryId);
   if (!d) return res.redirect(`/t/${encodeURIComponent(pc.access_token)}/app`);
   if (d.is_attack) await recordOnce(pc.id, d.delivery_id, "abierto", reactionMs(d.delivered_at));
+  // Árbol de respuestas (migración 010): si esta plantilla tiene ramas
+  // definidas, se ofrecen como botones de respuesta rápida junto a
+  // "Abrir"/"Reportar" -- ver POST /d/:deliveryId/branch.
+  const branches = d.template_id
+    ? (await query(`SELECT action_key, action_label FROM message_branches WHERE from_template_id = $1 ORDER BY created_at`, [d.template_id])).rows
+    : [];
   res.set(HTML).send(renderMessage(pc.access_token, {
     deliveryId: d.delivery_id, kind: d.kind, is_attack: d.is_attack,
     from: d.sender_label || (d.kind === "task" ? "TaskFlow" : "Notificaciones"),
-    subject: d.subject, body: d.body, cta_label: d.cta_label,
+    subject: d.subject, body: d.body, cta_label: d.cta_label, branches,
   }));
 });
 
@@ -313,12 +328,32 @@ trackingRouter.post("/:token/d/:deliveryId/cancel", async (req, res) => {
   res.redirect(`/t/${encodeURIComponent(pc.access_token)}/app`);
 });
 
+// Migración 010: si el participante tiene credenciales de práctica
+// asignadas (participant_campaign.practice_username/password -- NO son
+// credenciales reales de nadie, ver migración), compara EN MEMORIA lo que
+// escribió contra esas dos cadenas y guarda solo el resultado
+// (deliveries.credential_match_result). El texto escrito nunca toca una
+// variable que sobreviva esta función, ni se loguea: mismo principio que ya
+// aplicaba a 'intento_envio' antes de esta migración, extendido en vez de
+// debilitado por el hecho de que ahora sí exista "la respuesta correcta".
+function checkCredentialMatch(pc, body) {
+  if (!pc.practice_username || !pc.practice_password) return null;
+  const u = typeof body?.u === "string" ? body.u : "";
+  const p = typeof body?.p === "string" ? body.p : "";
+  return u === pc.practice_username && p === pc.practice_password;
+}
+
 trackingRouter.post("/:token/d/:deliveryId/submit", async (req, res) => {
   const pc = await loadPC(req.params.token);
   if (!pc) return res.status(404).json({ error: "Enlace no válido." });
   const d = await loadDelivery(pc.id, req.params.deliveryId);
   if (!d) return res.status(404).json({ error: "Mensaje no encontrado." });
   await recordOnce(pc.id, d.delivery_id, "intento_envio", reactionMs(d.delivered_at));
+
+  const match = checkCredentialMatch(pc, req.body);
+  if (match !== null) {
+    await query(`UPDATE deliveries SET credential_match_result = $1 WHERE id = $2`, [match, d.delivery_id]);
+  }
   if (req.is("application/json") || (req.headers.accept || "").includes("application/json")) {
     return res.json({ ok: true, message: "Registrado. Ningún dato ingresado fue almacenado." });
   }
@@ -355,6 +390,174 @@ trackingRouter.post("/:token/usability", async (req, res) => {
   if (!pc) return res.status(204).end();
   await query(`UPDATE participant_campaign SET usability_interactions = LEAST(usability_interactions + 1, 100000) WHERE id = $1`, [pc.id]);
   res.status(204).end();
+});
+
+// ---------------------------------------------------------------------------
+// Tableros reales (migración 010). Antes solo existían en localStorage del
+// navegador (invisibles para el equipo); ahora son filas de verdad, para que
+// un mensaje de ataque pueda referenciar una tarea/tablero real que el
+// propio participante creó (ver docs/2026-09-09_diversificacion-vectores-
+// ataque.md, "gancho de pretexto"). El "responsable" de una tarea siempre es
+// un fictitious_contacts.id -- nunca texto libre -- para no dejar entrar por
+// esta puerta el nombre real de un compañero de trabajo de verdad.
+
+trackingRouter.get("/:token/boards.json", async (req, res) => {
+  const pc = await loadPC(req.params.token);
+  if (!pc || !pc.consent_given) return res.status(404).json({ error: "no" });
+  res.json({ boards: await boards.loadBoards(pc.id) });
+});
+
+trackingRouter.get("/:token/board-templates.json", async (req, res) => {
+  const pc = await loadPC(req.params.token);
+  if (!pc || !pc.consent_given) return res.status(404).json({ error: "no" });
+  const r = await query(`SELECT id, name FROM board_templates WHERE campaign_id = $1 ORDER BY created_at`, [pc.campaign_id]);
+  res.json({ board_templates: r.rows });
+});
+
+trackingRouter.get("/:token/contacts.json", async (req, res) => {
+  const pc = await loadPC(req.params.token);
+  if (!pc || !pc.consent_given) return res.status(404).json({ error: "no" });
+  const r = await query(`SELECT id, display_name, role_label, avatar_color FROM fictitious_contacts WHERE campaign_id = $1 ORDER BY display_name`, [pc.campaign_id]);
+  res.json({ contacts: r.rows });
+});
+
+trackingRouter.post("/:token/boards", async (req, res) => {
+  const pc = await loadPC(req.params.token);
+  if (!pc || !pc.consent_given) return res.status(404).json({ error: "Enlace no válido." });
+  const name = typeof req.body?.name === "string" ? req.body.name.trim().slice(0, 120) : "";
+  if (!name) return res.status(400).json({ error: "Falta 'name'" });
+  const templateId = typeof req.body?.template_id === "string" ? req.body.template_id : null;
+  const board = await boards.createBoard(pc.id, { name, templateId });
+  res.status(201).json({ board });
+});
+
+trackingRouter.post("/:token/boards/:boardId/tasks", async (req, res) => {
+  const pc = await loadPC(req.params.token);
+  if (!pc || !pc.consent_given) return res.status(404).json({ error: "Enlace no válido." });
+  if (!(await boards.assertBoardOwnership(req.params.boardId, pc.id))) return res.status(404).json({ error: "Tablero no encontrado" });
+  const { column_id, title, description, responsible_contact_id } = req.body ?? {};
+  const titleTrim = typeof title === "string" ? title.trim().slice(0, 200) : "";
+  if (!column_id || !titleTrim) return res.status(400).json({ error: "Campos requeridos: column_id, title" });
+  if (!(await boards.assertColumnInBoard(column_id, req.params.boardId))) return res.status(400).json({ error: "La columna no pertenece a este tablero" });
+  const task = await boards.createTask(column_id, {
+    title: titleTrim,
+    description: typeof description === "string" ? description.slice(0, 2000) : null,
+    responsible_contact_id: responsible_contact_id || null,
+  });
+  res.status(201).json({ task });
+});
+
+trackingRouter.patch("/:token/boards/:boardId/tasks/:taskId", async (req, res) => {
+  const pc = await loadPC(req.params.token);
+  if (!pc || !pc.consent_given) return res.status(404).json({ error: "Enlace no válido." });
+  if (!(await boards.assertBoardOwnership(req.params.boardId, pc.id))) return res.status(404).json({ error: "Tablero no encontrado" });
+  if ((await boards.taskBoardId(req.params.taskId)) !== req.params.boardId) return res.status(404).json({ error: "Tarea no encontrada en este tablero" });
+  const { column_id, title, description, responsible_contact_id, position } = req.body ?? {};
+  if (column_id && !(await boards.assertColumnInBoard(column_id, req.params.boardId))) {
+    return res.status(400).json({ error: "La columna destino no pertenece a este tablero" });
+  }
+  const task = await boards.updateTask(req.params.taskId, {
+    title: typeof title === "string" ? title.trim().slice(0, 200) : null,
+    description: typeof description === "string" ? description.slice(0, 2000) : null,
+    responsible_contact_id: responsible_contact_id ?? null,
+    column_id: column_id ?? null,
+    position: Number.isInteger(position) ? position : null,
+  });
+  if (!task) return res.status(404).json({ error: "Tarea no encontrada" });
+  res.json({ task });
+});
+
+trackingRouter.delete("/:token/boards/:boardId/tasks/:taskId", async (req, res) => {
+  const pc = await loadPC(req.params.token);
+  if (!pc || !pc.consent_given) return res.status(404).json({ error: "Enlace no válido." });
+  if (!(await boards.assertBoardOwnership(req.params.boardId, pc.id))) return res.status(404).json({ error: "Tablero no encontrado" });
+  if ((await boards.taskBoardId(req.params.taskId)) !== req.params.boardId) return res.status(404).json({ error: "Tarea no encontrada en este tablero" });
+  const ok = await boards.deleteTask(req.params.taskId);
+  if (!ok) return res.status(404).json({ error: "Tarea no encontrada" });
+  res.json({ ok: true });
+});
+
+// ---------------------------------------------------------------------------
+// Chat persistente (migración 010). Se instancia (guion + ataques inyectados)
+// la primera vez que el participante abre la vista; después solo se agregan
+// respuestas suyas y, si aplica, nuevos ataques que lleguen por una rama del
+// árbol de respuestas (ver /:token/d/:deliveryId/branch más abajo).
+trackingRouter.get("/:token/chat.json", async (req, res) => {
+  const pc = await loadPC(req.params.token);
+  if (!pc || !pc.consent_given) return res.status(404).json({ error: "no" });
+  const { thread } = await chat.getOrCreateThread(pc);
+  const messages = await chat.loadThreadMessages(thread.id);
+  res.json({ thread_id: thread.id, messages });
+});
+
+trackingRouter.post("/:token/chat/reply", async (req, res) => {
+  const pc = await loadPC(req.params.token);
+  if (!pc || !pc.consent_given) return res.status(404).json({ error: "Enlace no válido." });
+  const body = typeof req.body?.body === "string" ? req.body.body.trim().slice(0, 1000) : "";
+  if (!body) return res.status(400).json({ error: "Falta 'body'" });
+  const { thread } = await chat.getOrCreateThread(pc);
+  const msg = await chat.appendReply(thread.id, body);
+  // Sin delivery_id: esto es una respuesta libre dentro del chat, no ligada
+  // a un mensaje de ataque concreto (para eso está la rama de abajo,
+  // /d/:deliveryId/branch, que sí registra el evento contra un delivery).
+  await query(`INSERT INTO events (participant_campaign_id, event_type, detail) VALUES ($1, 'respuesta_participante', 'chat_libre')`, [pc.id]);
+  res.status(201).json({ message: msg });
+});
+
+// ---------------------------------------------------------------------------
+// Árbol de respuestas (migración 010, opción "a"): el participante elige una
+// acción prediseñada sobre un mensaje de ataque (correo o chat) y el sistema
+// crea el siguiente mensaje/delivery de la conversación a partir de la
+// plantilla que el admin enlazó para esa acción (message_branches). Si el
+// mensaje original llegó por chat, el nuevo también se agrega al mismo hilo;
+// si llegó por correo, aparece como un mensaje nuevo en la bandeja (mismo
+// patrón que cualquier delivery).
+trackingRouter.post("/:token/d/:deliveryId/branch", async (req, res) => {
+  const pc = await loadPC(req.params.token);
+  if (!pc) return res.status(404).json({ error: "Enlace no válido." });
+  const d = await loadDelivery(pc.id, req.params.deliveryId);
+  if (!d || !d.is_attack) return res.status(404).json({ error: "Mensaje no encontrado." });
+  const actionKey = typeof req.body?.action_key === "string" ? req.body.action_key : "";
+  if (!actionKey) return res.status(400).json({ error: "Falta 'action_key'" });
+
+  if (!d.template_id) return res.status(400).json({ error: "Este mensaje no viene de una plantilla; no tiene ramas definidas." });
+  const branch = await query(
+    `SELECT * FROM message_branches WHERE from_template_id = $1 AND action_key = $2`,
+    [d.template_id, actionKey]
+  );
+  if (branch.rows.length === 0) return res.status(404).json({ error: "Esa acción no está disponible para este mensaje." });
+
+  await recordOnce(pc.id, d.delivery_id, "respuesta_participante", reactionMs(d.delivered_at), actionKey);
+
+  const campaign = await query(`SELECT seed, jolting_probability FROM campaigns WHERE id = $1`, [pc.campaign_id]);
+  const resolved = await resolveMessageFields(
+    { template_id: branch.rows[0].to_template_id },
+    { parent_message_id: d.message_id, branch_action_key: actionKey }
+  );
+  if (resolved.error) return res.status(500).json({ error: resolved.error });
+  const nextMessage = await insertMessage(pc.campaign_id, resolved.fields);
+  const nextDelivery = await createDeliveryForParticipant({
+    message: { id: nextMessage.id, jolting_probability: campaign.rows[0].jolting_probability },
+    campaignSeed: campaign.rows[0].seed,
+    participantCampaignId: pc.id,
+  });
+
+  // Si el mensaje original llegó por chat, el siguiente también se inyecta
+  // en el mismo hilo (mismo remitente ficticio que dijo lo anterior, si lo
+  // hay) -- para que sea una conversación continua, no un salto a la bandeja.
+  if (d.kind === "chat" && nextDelivery) {
+    const senderRow = await query(
+      `SELECT sender_contact_id FROM chat_messages WHERE delivery_id = $1 LIMIT 1`,
+      [d.delivery_id]
+    );
+    await chat.appendAttackToThread(pc.id, nextDelivery.id, senderRow.rows[0]?.sender_contact_id ?? null);
+  }
+
+  res.status(201).json({
+    message: nextMessage,
+    delivery: nextDelivery,
+    appended_to_chat: d.kind === "chat" && !!nextDelivery,
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -11,6 +11,7 @@ import { messagesRouter } from "./routes/messages.js";
 import { trackingRouter } from "./routes/tracking.js";
 import { dashboardRouter } from "./routes/dashboard.js";
 import { exportRouter } from "./routes/export.js";
+import { interactionRouter } from "./routes/interaction.js";
 import { pool } from "./db.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -40,6 +41,7 @@ export function createApp() {
   app.use("/api", messagesRouter); // /api/campaigns/:id/messages, /api/messages/:id/*
   app.use("/api/dashboard", dashboardRouter);
   app.use("/api/export", exportRouter);
+  app.use("/api", interactionRouter); // /api/campaigns/:id/contacts, /board-templates, /chat-scripts; /api/templates/:id/branches
   app.use("/t", trackingRouter);
 
   // eslint-disable-next-line no-unused-vars

@@ -15,5 +15,13 @@ export async function cleanupTestData() {
   await pool.query(`DELETE FROM campaign_templates WHERE campaign_id IN ${camps}`);
   await pool.query(`DELETE FROM campaigns WHERE id IN ${camps}`);
   await pool.query(`DELETE FROM participants WHERE id IN ${parts}`);
-  await pool.query(`DELETE FROM templates WHERE name ~ '^(Auth|R) [0-9]{10,}$'`);
+  // message_branches.to_template_id no tiene ON DELETE CASCADE (a propósito:
+  // borrar la plantilla DESTINO de una rama no debería poder arrastrar nada
+  // más) -- así que antes de borrar las plantillas de prueba hay que limpiar
+  // a mano cualquier rama que las referencie, o el DELETE de abajo fallaría
+  // por la FK. from_template_id sí tiene CASCADE (migración 010) y se limpia
+  // solo al borrar su plantilla de origen.
+  const tpls = `(SELECT id FROM templates WHERE name ~ '^(Auth|R) [0-9]{10,}$')`;
+  await pool.query(`DELETE FROM message_branches WHERE from_template_id IN ${tpls} OR to_template_id IN ${tpls}`);
+  await pool.query(`DELETE FROM templates WHERE id IN ${tpls}`);
 }
