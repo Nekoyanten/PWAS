@@ -36,6 +36,7 @@ $$(".steps button").forEach((b) => b.addEventListener("click", () => {
   $$(".tabpane").forEach((p) => (p.hidden = true));
   $("#tab-" + b.dataset.tab).hidden = false;
   if (b.dataset.tab === "res") loadResults();
+  if (b.dataset.tab === "int") loadInteraction();
 }));
 function markDone(tab, done) {
   const b = $(`.steps button[data-tab="${tab}"]`);
@@ -88,6 +89,11 @@ function onCampaignChange() {
   loadPreflight();
   loadMessages();
   markDone("camp", Number(c.links) > 0);
+  // El módulo de interacción (paso 6) es por campaña: al cambiar de campaña,
+  // los constructores en curso (tablero/guion sin guardar) ya no aplican.
+  boardTplColumns = []; renderBoardTplCols();
+  chatScriptSteps = []; renderChatScriptSteps();
+  if (!$("#tab-int").hidden) loadInteraction();
 }
 
 /* ================= 1 · PARTICIPANTES ================= */
@@ -572,6 +578,242 @@ $("#downloadBehaviorBtn").addEventListener("click", async () => {
   } catch (e) { $("#behMsg").textContent = "Error: " + e.message; }
 });
 
+/* ================= 6 · INTERACCIÓN (compañeros, tableros, chat, respuestas) ================= */
+let CONTACTS = [];
+let boardTplColumns = [];
+let chatScriptSteps = [];
+
+async function loadInteraction() {
+  $("#intNoCamp").hidden = !!CURRENT_CAMP;
+  if (!CURRENT_CAMP) {
+    $("#contactsTable tbody").innerHTML = "";
+    $("#boardTplTable tbody").innerHTML = "";
+    $("#chatScriptTable tbody").innerHTML = "";
+    $("#branchTable tbody").innerHTML = "";
+    $("#credsTable tbody").innerHTML = "";
+    return;
+  }
+  await loadContacts();
+  await loadBoardTemplates();
+  await loadChatScripts();
+  fillBranchTemplateSelects();
+  await loadBranches();
+  loadCreds();
+}
+
+/* -------- compañeros ficticios -------- */
+async function loadContacts() {
+  const { contacts } = await api("GET", `/api/campaigns/${CURRENT_CAMP}/contacts`);
+  CONTACTS = contacts;
+  $("#contactsTable tbody").innerHTML = contacts.map((c) => `<tr>
+    <td>${esc(c.display_name)}</td><td>${esc(c.role_label || "—")}</td>
+    <td><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:${esc(c.avatar_color || "#9aa1ad")}"></span></td>
+    <td><button class="btn-xs ghost" data-del-contact="${c.id}">borrar</button></td></tr>`).join("")
+    || `<tr><td colspan="4" class="hint">Sin compañeros ficticios todavía.</td></tr>`;
+  $$("#contactsTable [data-del-contact]").forEach((b) => b.onclick = async () => {
+    if (!confirm("¿Borrar este compañero ficticio?")) return;
+    try { await api("DELETE", "/api/contacts/" + b.dataset.delContact); await loadContacts(); renderBoardTplCols(); renderChatScriptSteps(); }
+    catch (e) { alert(e.message); }
+  });
+}
+$("#contactForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (!CURRENT_CAMP) return alert("Elige una campaña en el paso 2.");
+  const f = e.target;
+  try {
+    await api("POST", `/api/campaigns/${CURRENT_CAMP}/contacts`, {
+      display_name: f.display_name.value.trim(),
+      role_label: f.role_label.value.trim() || null,
+      avatar_color: f.avatar_color.value,
+    });
+    f.reset(); f.avatar_color.value = "#4f46e5";
+    await loadContacts(); renderBoardTplCols(); renderChatScriptSteps();
+  } catch (err) { alert(err.message); }
+});
+
+/* -------- plantillas de tablero -------- */
+async function loadBoardTemplates() {
+  const { board_templates } = await api("GET", `/api/campaigns/${CURRENT_CAMP}/board-templates`);
+  $("#boardTplTable tbody").innerHTML = board_templates.map((t) => `<tr>
+    <td>${esc(t.name)}</td><td>${(t.seed || []).length}</td>
+    <td>${(t.seed || []).reduce((n, col) => n + (col.tasks?.length || 0), 0)}</td>
+  </tr>`).join("") || `<tr><td colspan="3" class="hint">Sin plantillas de tablero todavía.</td></tr>`;
+}
+function renderBoardTplCols() {
+  $("#boardTplCols").innerHTML = boardTplColumns.map((col, ci) => `
+    <div class="int-col">
+      <div class="int-task">
+        <strong>Columna ${ci + 1}</strong>
+        <input data-path="col:${ci}:name" value="${esc(col.name)}" placeholder="Nombre de columna (ej. Por hacer)" style="flex:1;min-width:160px">
+        <button type="button" class="btn-xs ghost" data-remove-col="${ci}">quitar columna</button>
+      </div>
+      ${col.tasks.map((t, ti) => `
+        <div class="int-task">
+          <input data-path="col:${ci}:task:${ti}:title" value="${esc(t.title)}" placeholder="Título de la tarea" style="flex:1;min-width:160px">
+          <input data-path="col:${ci}:task:${ti}:description" value="${esc(t.description || "")}" placeholder="Descripción (opcional)" style="flex:1;min-width:160px">
+          <select data-path="col:${ci}:task:${ti}:responsible_contact_id">
+            <option value="">Sin responsable</option>
+            ${CONTACTS.map((c) => `<option value="${c.id}" ${t.responsible_contact_id === c.id ? "selected" : ""}>${esc(c.display_name)}</option>`).join("")}
+          </select>
+          <button type="button" class="btn-xs ghost" data-remove-task="${ci}:${ti}">quitar</button>
+        </div>`).join("")}
+      <button type="button" class="btn-xs" data-addtask="${ci}">+ Tarea</button>
+    </div>`).join("") || `<p class="hint">Añade al menos una columna.</p>`;
+}
+function setBoardTplPath(path, value) {
+  const [, ci, kind, ti, field] = path.split(":");
+  if (kind === "name") boardTplColumns[+ci].name = value;
+  else if (kind === "task") boardTplColumns[+ci].tasks[+ti][field] = value;
+}
+$("#boardTplCols").addEventListener("input", (e) => { if (e.target.dataset.path) setBoardTplPath(e.target.dataset.path, e.target.value); });
+$("#boardTplCols").addEventListener("change", (e) => { if (e.target.dataset.path) setBoardTplPath(e.target.dataset.path, e.target.value); });
+$("#boardTplCols").addEventListener("click", (e) => {
+  if (e.target.dataset.removeCol !== undefined) { boardTplColumns.splice(+e.target.dataset.removeCol, 1); renderBoardTplCols(); }
+  else if (e.target.dataset.addtask !== undefined) { boardTplColumns[+e.target.dataset.addtask].tasks.push({ title: "", description: "", responsible_contact_id: "" }); renderBoardTplCols(); }
+  else if (e.target.dataset.removeTask !== undefined) {
+    const [ci, ti] = e.target.dataset.removeTask.split(":").map(Number);
+    boardTplColumns[ci].tasks.splice(ti, 1); renderBoardTplCols();
+  }
+});
+$("#boardTplAddCol").addEventListener("click", () => { boardTplColumns.push({ name: "", tasks: [] }); renderBoardTplCols(); });
+$("#boardTplSave").addEventListener("click", async () => {
+  if (!CURRENT_CAMP) return alert("Elige una campaña en el paso 2.");
+  const name = $("#boardTplName").value.trim();
+  if (!name) return alert("Ponle un nombre a la plantilla.");
+  const seed = boardTplColumns.filter((c) => c.name.trim()).map((c) => ({
+    name: c.name.trim(),
+    tasks: c.tasks.filter((t) => t.title.trim()).map((t) => ({
+      title: t.title.trim(),
+      description: t.description?.trim() || undefined,
+      responsible_contact_id: t.responsible_contact_id || undefined,
+    })),
+  }));
+  if (!seed.length) return alert("Añade al menos una columna con nombre.");
+  try {
+    await api("POST", `/api/campaigns/${CURRENT_CAMP}/board-templates`, { name, seed });
+    $("#boardTplName").value = ""; boardTplColumns = []; renderBoardTplCols();
+    $("#boardTplMsg").textContent = "Plantilla guardada ✓"; loadBoardTemplates();
+  } catch (e) { $("#boardTplMsg").textContent = "Error: " + e.message; }
+});
+
+/* -------- guiones de chat -------- */
+async function loadChatScripts() {
+  const { chat_scripts } = await api("GET", `/api/campaigns/${CURRENT_CAMP}/chat-scripts`);
+  $("#chatScriptTable tbody").innerHTML = chat_scripts.map((s) => `<tr>
+    <td>${esc(s.name)}</td><td>${(s.script || []).length}</td></tr>`).join("")
+    || `<tr><td colspan="2" class="hint">Sin guiones de chat todavía.</td></tr>`;
+}
+function renderChatScriptSteps() {
+  $("#chatScriptSteps").innerHTML = chatScriptSteps.map((s, si) => `
+    <div class="int-task">
+      <span class="badge ${s.type === "attack" ? "atk" : "benigno"}">${s.type === "attack" ? "ataque" : "mensaje"}</span>
+      <select data-path="step:${si}:sender_contact_id">
+        <option value="">Sin remitente</option>
+        ${CONTACTS.map((c) => `<option value="${c.id}" ${s.sender_contact_id === c.id ? "selected" : ""}>${esc(c.display_name)}</option>`).join("")}
+      </select>
+      ${s.type === "scripted"
+        ? `<input data-path="step:${si}:body" value="${esc(s.body || "")}" placeholder="Qué dice (ej. ¿Ya viste el correo de soporte?)" style="flex:1;min-width:220px">`
+        : `<select data-path="step:${si}:template_id">
+             <option value="">— elige plantilla de ataque —</option>
+             ${TEMPLATES.filter((t) => t.is_attack).map((t) => `<option value="${t.id}" ${s.template_id === t.id ? "selected" : ""}>${esc(t.name)}</option>`).join("")}
+           </select>`}
+      <button type="button" class="btn-xs ghost" data-move="${si}:-1" ${si === 0 ? "disabled" : ""}>↑</button>
+      <button type="button" class="btn-xs ghost" data-move="${si}:1" ${si === chatScriptSteps.length - 1 ? "disabled" : ""}>↓</button>
+      <button type="button" class="btn-xs ghost" data-remove-step="${si}">quitar</button>
+    </div>`).join("") || `<p class="hint">Añade al menos un paso.</p>`;
+}
+function setChatScriptPath(path, value) {
+  const [, si, field] = path.split(":");
+  chatScriptSteps[+si][field] = value;
+}
+$("#chatScriptSteps").addEventListener("input", (e) => { if (e.target.dataset.path) setChatScriptPath(e.target.dataset.path, e.target.value); });
+$("#chatScriptSteps").addEventListener("change", (e) => { if (e.target.dataset.path) setChatScriptPath(e.target.dataset.path, e.target.value); });
+$("#chatScriptSteps").addEventListener("click", (e) => {
+  if (e.target.dataset.removeStep !== undefined) { chatScriptSteps.splice(+e.target.dataset.removeStep, 1); renderChatScriptSteps(); }
+  else if (e.target.dataset.move !== undefined) {
+    const [si, dir] = e.target.dataset.move.split(":").map(Number);
+    const nsi = si + dir;
+    if (nsi < 0 || nsi >= chatScriptSteps.length) return;
+    [chatScriptSteps[si], chatScriptSteps[nsi]] = [chatScriptSteps[nsi], chatScriptSteps[si]];
+    renderChatScriptSteps();
+  }
+});
+$("#chatScriptAddScripted").addEventListener("click", () => { chatScriptSteps.push({ type: "scripted", sender_contact_id: "", body: "" }); renderChatScriptSteps(); });
+$("#chatScriptAddAttack").addEventListener("click", () => { chatScriptSteps.push({ type: "attack", sender_contact_id: "", template_id: "" }); renderChatScriptSteps(); });
+$("#chatScriptSave").addEventListener("click", async () => {
+  if (!CURRENT_CAMP) return alert("Elige una campaña en el paso 2.");
+  const name = $("#chatScriptName").value.trim();
+  if (!name) return alert("Ponle un nombre al guion.");
+  const script = chatScriptSteps.map((s) => s.type === "scripted"
+    ? { type: "scripted", sender_contact_id: s.sender_contact_id || undefined, body: (s.body || "").trim() }
+    : { type: "attack", sender_contact_id: s.sender_contact_id || undefined, template_id: s.template_id || undefined });
+  if (!script.length) return alert("Añade al menos un paso.");
+  if (script.some((s) => s.type === "scripted" && !s.body)) return alert("Todo paso de \"mensaje del equipo\" necesita texto.");
+  if (script.some((s) => s.type === "attack" && !s.template_id)) return alert("Todo paso de \"insertar ataque\" necesita una plantilla.");
+  try {
+    await api("POST", `/api/campaigns/${CURRENT_CAMP}/chat-scripts`, { name, script });
+    $("#chatScriptName").value = ""; chatScriptSteps = []; renderChatScriptSteps();
+    $("#chatScriptMsg").textContent = "Guion guardado ✓"; loadChatScripts();
+  } catch (e) { $("#chatScriptMsg").textContent = "Error: " + e.message; }
+});
+
+/* -------- árbol de respuestas -------- */
+function fillBranchTemplateSelects() {
+  const opts = TEMPLATES.map((t) => `<option value="${t.id}">${t.is_attack ? "[ataque] " : "[relleno] "}${esc(t.name)}</option>`).join("");
+  $("#branchFromTpl").innerHTML = `<option value="">— elige —</option>` + opts;
+  $("#branchForm [name=to_template_id]").innerHTML = `<option value="">— elige plantilla destino —</option>` + opts;
+}
+$("#branchFromTpl").addEventListener("change", loadBranches);
+async function loadBranches() {
+  const fromId = $("#branchFromTpl").value;
+  if (!fromId) { $("#branchTable tbody").innerHTML = `<tr><td colspan="4" class="hint">Elige una plantilla de origen arriba.</td></tr>`; return; }
+  const { branches } = await api("GET", `/api/templates/${fromId}/branches`);
+  $("#branchTable tbody").innerHTML = branches.map((b) => {
+    const to = TEMPLATES.find((t) => t.id === b.to_template_id);
+    return `<tr><td><code>${esc(b.action_key)}</code></td><td>${esc(b.action_label)}</td><td>${esc(to?.name || b.to_template_id)}</td>
+      <td><button class="btn-xs ghost" data-del-branch="${b.id}">borrar</button></td></tr>`;
+  }).join("") || `<tr><td colspan="4" class="hint">Sin respuestas configuradas para esta plantilla.</td></tr>`;
+  $$("#branchTable [data-del-branch]").forEach((b) => b.onclick = async () => {
+    if (!confirm("¿Borrar esta respuesta?")) return;
+    try { await api("DELETE", "/api/branches/" + b.dataset.delBranch); loadBranches(); } catch (e) { alert(e.message); }
+  });
+}
+$("#branchForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const fromId = $("#branchFromTpl").value;
+  if (!fromId) return alert("Elige primero la plantilla de origen.");
+  const f = e.target;
+  try {
+    await api("POST", `/api/templates/${fromId}/branches`, {
+      action_key: f.action_key.value.trim(), action_label: f.action_label.value.trim(), to_template_id: f.to_template_id.value,
+    });
+    f.reset(); loadBranches();
+  } catch (err) { alert(err.message); }
+});
+
+/* -------- credenciales de práctica -------- */
+function loadCreds() {
+  $("#credsTable tbody").innerHTML = LINKS.map((l) => `<tr data-pcid="${l.id}">
+    <td><code>${esc(l.external_hash)}</code></td><td>${esc(l.team_label || "—")}</td>
+    <td><input class="cred-user" style="width:100%" placeholder="usuario"></td>
+    <td><input class="cred-pass" style="width:100%" placeholder="contraseña"></td>
+  </tr>`).join("") || `<tr><td colspan="4" class="hint">Genera los enlaces en el paso 2 primero.</td></tr>`;
+}
+$("#credsSaveBtn").addEventListener("click", async () => {
+  if (!CURRENT_CAMP) return alert("Elige una campaña en el paso 2.");
+  const assignments = $$("#credsTable tr[data-pcid]").map((tr) => ({
+    participant_campaign_id: tr.dataset.pcid,
+    username: tr.querySelector(".cred-user").value.trim(),
+    password: tr.querySelector(".cred-pass").value.trim(),
+  })).filter((a) => a.username && a.password);
+  if (!assignments.length) return alert("Escribe al menos un usuario y una contraseña.");
+  try {
+    const r = await api("POST", `/api/campaigns/${CURRENT_CAMP}/practice-credentials`, { assignments });
+    $("#credsMsg").textContent = `Asignadas a ${r.updated} participante(s) ✓`;
+  } catch (e) { $("#credsMsg").textContent = "Error: " + e.message; }
+});
+
 /* ================= arranque ================= */
 toggleAttackFields(); toggleMsgAttack();
+renderBoardTplCols(); renderChatScriptSteps();
 if (KEY) $("#connectBtn").click();

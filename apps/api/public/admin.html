@@ -45,6 +45,7 @@
       <button data-tab="tpl"><span class="n">3</span> Plantillas</button>
       <button data-tab="msg"><span class="n">4</span> Mensajes</button>
       <button data-tab="res"><span class="n">5</span> Resultados</button>
+      <button data-tab="int"><span class="n">6</span> Interacción</button>
     </nav>
 
     <!-- ============ 1 · PARTICIPANTES ============ -->
@@ -279,6 +280,84 @@ p04,directivo,Equipo 2"></textarea>
         <h2>Motor de decisión por riesgo <span class="badge benigno">modo sombra — no gatea nada real</span></h2>
         <p class="hint">Puntaje de riesgo calculado en tiempo real para cada clic en un ataque, a partir del comportamiento de mouse/teclado (TG §8.2.5). Es puramente informativo: la columna "el aviso habría salido" compara el puntaje con el umbral de la campaña (paso 2), pero <strong>no es lo que decidió</strong> si el participante vio el aviso de verdad — esa decisión sigue dependiendo solo de la probabilidad configurada arriba.</p>
         <table id="riskTable"><thead><tr><th>Grupo</th><th>Ataques</th><th>Puntuados</th><th>Con error</th><th>Riesgo promedio</th><th>El aviso habría salido (sombra)</th><th>El aviso salió de verdad</th></tr></thead><tbody></tbody></table>
+      </div>
+    </section>
+
+    <!-- ============ 6 · INTERACCIÓN (compañeros, tableros, chat, respuestas) ============ -->
+    <section id="tab-int" class="tabpane" hidden>
+      <div class="banner warn" id="intNoCamp" hidden>Elige o crea una campaña en el paso 2 para administrar esto.</div>
+
+      <div class="panel">
+        <h2>6 · Compañeros de equipo ficticios</h2>
+        <p class="hint">Nombres inventados que aparecen como remitentes en el chat y como responsables de tareas del tablero. Nadie real detrás — son solo ambientación de TaskFlow.</p>
+        <table id="contactsTable"><thead><tr><th>Nombre</th><th>Rol</th><th>Color</th><th></th></tr></thead><tbody></tbody></table>
+        <form id="contactForm" class="form-actions" style="margin-top:.6rem">
+          <input name="display_name" placeholder="Nombre (ej. Laura Méndez)" required style="padding:.45rem .55rem;border:1px solid #cbd3e1;border-radius:6px">
+          <input name="role_label" placeholder="Rol (ej. Líder de proyecto)" style="padding:.45rem .55rem;border:1px solid #cbd3e1;border-radius:6px">
+          <input name="avatar_color" type="color" value="#4f46e5" title="Color del avatar" style="padding:.15rem;height:2.15rem;width:2.6rem;border:1px solid #cbd3e1;border-radius:6px">
+          <button type="submit" class="btn-sm">Añadir compañero</button>
+        </form>
+      </div>
+
+      <div class="panel">
+        <h2>Plantillas de tablero</h2>
+        <p class="hint">Un tablero "de fábrica" (columnas y tareas ya cargadas, cada una con su responsable) que el participante puede elegir al crear su primer tablero, en vez de arrancar en blanco.</p>
+        <table id="boardTplTable"><thead><tr><th>Nombre</th><th>Columnas</th><th>Tareas</th></tr></thead><tbody></tbody></table>
+        <h3>Nueva plantilla de tablero</h3>
+        <div class="form-actions">
+          <input id="boardTplName" placeholder="Nombre de la plantilla (ej. Lanzamiento Q3)" style="padding:.45rem .55rem;border:1px solid #cbd3e1;border-radius:6px;min-width:260px">
+        </div>
+        <div id="boardTplCols"></div>
+        <div class="form-actions">
+          <button type="button" id="boardTplAddCol" class="btn-sm ghost">+ Columna</button>
+          <button type="button" id="boardTplSave" class="btn-sm">Guardar plantilla de tablero</button>
+          <span id="boardTplMsg" class="hint"></span>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Guiones de chat</h2>
+        <p class="hint">Lo que el equipo ya conversó antes de que el participante abra el chat, en orden: un mensaje ambiente de un compañero, o un punto donde se inserta un ataque (plantillas del paso 3). El árbol de respuestas de abajo decide qué pasa después de que el participante conteste — nunca se interpreta texto libre.</p>
+        <table id="chatScriptTable"><thead><tr><th>Nombre</th><th>Pasos</th></tr></thead><tbody></tbody></table>
+        <h3>Nuevo guion de chat</h3>
+        <div class="form-actions">
+          <input id="chatScriptName" placeholder="Nombre del guion (ej. Guion equipo Operaciones)" style="padding:.45rem .55rem;border:1px solid #cbd3e1;border-radius:6px;min-width:260px">
+        </div>
+        <div id="chatScriptSteps"></div>
+        <div class="form-actions">
+          <button type="button" id="chatScriptAddScripted" class="btn-sm ghost">+ Mensaje del equipo</button>
+          <button type="button" id="chatScriptAddAttack" class="btn-sm ghost">+ Insertar ataque</button>
+          <button type="button" id="chatScriptSave" class="btn-sm">Guardar guion de chat</button>
+          <span id="chatScriptMsg" class="hint"></span>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Árbol de respuestas</h2>
+        <p class="hint">Qué botones de respuesta rápida ofrece un mensaje, y a qué siguiente plantilla lleva cada uno (ej. "Sí, es urgente" → un segundo mensaje con el enlace trampa). Es un árbol fijo, definido por ti: nunca interpreta lo que el participante escribe.</p>
+        <div class="form-actions">
+          <label>Plantilla de origen
+            <select id="branchFromTpl" style="padding:.4rem .5rem;border:1px solid #cbd3e1;border-radius:6px;margin-left:.4rem"></select>
+          </label>
+        </div>
+        <table id="branchTable"><thead><tr><th>Clave</th><th>Texto del botón</th><th>Lleva a…</th><th></th></tr></thead><tbody></tbody></table>
+        <h3>Añadir respuesta</h3>
+        <form id="branchForm" class="form-actions">
+          <input name="action_key" placeholder="clave (ej. si_urgente)" required style="padding:.45rem .55rem;border:1px solid #cbd3e1;border-radius:6px;width:160px">
+          <input name="action_label" placeholder="Texto del botón (ej. Sí, es urgente)" required style="padding:.45rem .55rem;border:1px solid #cbd3e1;border-radius:6px;min-width:220px">
+          <select name="to_template_id" required style="padding:.45rem .55rem;border:1px solid #cbd3e1;border-radius:6px"></select>
+          <button type="submit" class="btn-sm">Añadir</button>
+        </form>
+      </div>
+
+      <div class="panel">
+        <h2>Credenciales de práctica</h2>
+        <p class="hint">Usuario y contraseña "de mentira" que le asignas a cada participante para que, si cae en una página trampa de tipo <strong>form</strong>, se pueda comparar lo que escribió. Nunca se guarda lo que el participante realmente tipeó — solo si coincidió. Genera los enlaces en el paso 2 antes de esto.</p>
+        <table id="credsTable"><thead><tr><th>Identificador</th><th>Equipo</th><th>Usuario de práctica</th><th>Contraseña de práctica</th></tr></thead><tbody></tbody></table>
+        <div class="form-actions">
+          <button type="button" id="credsSaveBtn" class="btn-sm">Guardar credenciales de práctica</button>
+          <span id="credsMsg" class="hint"></span>
+        </div>
       </div>
     </section>
   </main>

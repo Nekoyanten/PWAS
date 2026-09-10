@@ -462,13 +462,14 @@ export function renderApp(token, { inbox, view, boardsData, contacts, boardTempl
       <div class="home-actions">
         <button class="btn" type="button" data-goto="tablero">Ir a mi tablero</button>
         <button class="btn ghost" type="button" data-goto="bandeja">Ver la bandeja</button>
+        <button class="btn ghost" type="button" data-goto="chat">${I.chat}<span>Chat de equipo</span></button>
       </div>
     </div>`;
 
   const viewTablero = `
     <div class="workspace">
       <div class="board-area" x-data="tfBoards()">
-        <div class="board-tabs" x-show="boards.length">
+        <div class="board-tabs">
           <template x-for="b in boards" :key="b.id">
             <button type="button" class="board-tab" :class="{active: activeBoard === b.id}" @click="selectBoard(b.id)" x-text="b.name"></button>
           </template>
@@ -874,6 +875,7 @@ ${behaviorCaptureTag(token, "app")}`, {
 .hc-n{font-size:1.7rem;font-weight:700;color:var(--brand-strong)}
 .hc-l{font-size:.82rem;color:var(--muted);margin-top:.2rem}
 .home-actions{display:flex;gap:.6rem;flex-wrap:wrap}
+.home-actions svg{width:15px;height:15px}
 .inbox-full{max-width:720px;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden}
 .inbox-full h3{margin:0;padding:.9rem 1.05rem;font-size:.95rem;font-weight:650;border-bottom:1px solid var(--line)}
 .agenda-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:.7rem;margin-top:1rem}

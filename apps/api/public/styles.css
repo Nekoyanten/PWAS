@@ -157,6 +157,12 @@ form.grid2 input, form.grid2 select, form.grid2 textarea {
 .mini-bars .fill { height: 100%; background: #2e74b5; }
 .mini-bars .val { width: 48px; flex: none; text-align: right; color: #33415c; font-weight: 600; }
 
+/* ---- 6 · interacción: constructores de tablero / guion de chat ---- */
+.int-col { border: 1px solid #e3e8f2; border-radius: 8px; padding: 0.6rem 0.7rem; margin: 0.5rem 0; background: #fbfcfe; }
+.int-col > .form-actions { margin-top: 0; }
+.int-task { display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; margin: 0.35rem 0; }
+.int-task input, .int-task select { padding: 0.35rem 0.5rem; border: 1px solid #cbd3e1; border-radius: 6px; }
+
 @media (max-width: 720px) {
   form.grid2 { grid-template-columns: 1fr; }
   .checks { grid-template-columns: 1fr; }
