@@ -134,20 +134,79 @@ riesgo mucho más caro que el síntoma puntual que reportó el usuario.
   dejar datos de prueba en el piloto — la verificación se hizo a nivel de
   rol/permiso, que es lo que efectivamente decide si el `INSERT` pasa o no.
 
-## 5. Qué falta / recomendación
+## 5. Actualización — el parche ya quedó desplegado, y apareció un segundo incidente
 
-- El usuario debería reintentar ahora mismo crear una campaña e importar
-  participantes desde el panel admin en producción: con la migración 011
-  ya aplicada, ambas operaciones deberían funcionar sin necesidad de
-  ningún otro cambio de código de este parche.
-- Sigue pendiente aplicar en producción los cambios de código de este
-  parche (`express-async-errors` + el middleware de errores más
-  específico) — a diferencia de la migración 011 (ya aplicada
-  directamente contra Supabase), estos SÍ requieren desplegar el parche
-  (`git am` + `git push`, ver limitación de esta sesión para hacer push
-  directo) para tomar efecto en Render.
-- Recomendación a mediano plazo: si se vuelve a rotar o recrear el rol de
-  conexión de la app (`app_service` u otro), revisar explícitamente que
-  tenga `BYPASSRLS` como parte del checklist de despliegue — es fácil que
-  un cambio de credenciales rompa este supuesto otra vez sin que nada lo
-  avise hasta que alguien intente escribir datos.
+El usuario desplegó el parche de este documento (`express-async-errors` +
+el middleware de errores más específico) poco después de recibirlo —
+confirmado en los logs de Render (`deploy dep-dah3081t0dsc73ec8qa0`, commit
+`fix-rls-app-service-y-crash-async`, estado `live`). Con eso ya en
+producción, el mismo usuario reportó un tercer error: `HTTP 500` genérico
+al abrir un enlace de participante (`GET /t/:token`).
+
+### 5.1. Diagnóstico
+
+Gracias al fix de la sección 3, esta vez el error llegó como una respuesta
+`500` controlada en vez de tumbar el proceso — se pudo leer directo en los
+logs de Render sin tener que reconstruir nada:
+
+```
+error: column pc.practice_username does not exist
+```
+
+Esa columna la agrega la migración 010 (`participant_campaign.
+practice_username`), la del parche 0012 ("interacción ampliada: tableros,
+chat, árbol de respuestas"). El código de esa migración **sí** estaba
+desplegado en Render (el commit se ve en la lista de deploys), pero la
+migración SQL nunca se había corrido contra la base de Supabase de
+producción — exactamente la advertencia que ya llevaba el propio
+documento de esa entrega ("sigue pendiente aplicarla en Supabase de
+producción"), y el mismo patrón de esta semana: `git push` despliega el
+código, pero nunca corre las migraciones por sí solo.
+
+Se aplicó la migración 010 completa directamente contra
+`ihemxqzuolhmkwikhnlg` (en dos pasos, respetando la separación de
+transacciones que ya traía el archivo: primero los `ALTER TYPE ... ADD
+VALUE`, después las tablas nuevas) y se confirmó con
+`information_schema.columns` que las columnas y las 9 tablas nuevas
+(`boards`, `chat_messages`, `message_branches`, etc.) ya existen. El
+enlace de ejemplo que compartió el usuario
+(`/t/PP3qjRHC5dXvaePGK35ELrf9`) se volvió a probar (con `WebFetch`, sin
+dejar ningún dato de prueba) y ahora sirve la página de consentimiento
+normal en vez del error.
+
+### 5.2. Un hueco de seguridad que salió a la luz de paso (migración 012)
+
+Al aplicar la 010 recién ahora, el linter de seguridad de Supabase marcó
+sus 9 tablas nuevas como expuestas por la API REST autogenerada
+(PostgREST) sin RLS — el mismo problema que la migración 009 ya había
+cerrado para las 12 tablas originales, reabierto sin querer porque cuando
+se escribió la migración 010, activar RLS todavía no era parte del
+checklist de cada tabla nueva. Se cerró de la misma forma
+(`ALTER TABLE ... ENABLE ROW LEVEL SECURITY`, documentado como
+`db/migrations/012_rls_tablas_interaccion_ampliada.sql`) y, como
+`app_service` ya tiene `BYPASSRLS` desde la migración 011, esto no le
+cambia nada a la app — solo termina de cerrar la puerta a `anon`/
+`authenticated`.
+
+## 6. Qué falta / recomendación
+
+- Nada pendiente de aplicar contra Supabase: las migraciones 010, 011 y
+  012 ya están todas en producción, verificadas.
+- El código de `express-async-errors` (parche de la sección 3) ya está
+  desplegado y en vivo en Render.
+- **Recomendación de proceso, la más importante de esta entrega**: este es
+  el segundo incidente seguido causado por lo mismo — una migración SQL
+  que se escribe y se prueba localmente, pero nunca se corre contra
+  producción porque `git push` solo despliega código. Vale la pena que el
+  checklist de cada entrega incluya explícitamente "¿esta entrega trae una
+  migración? ¿ya se corrió contra Supabase de producción?" antes de darla
+  por terminada — o, mejor aún, evaluar automatizar la aplicación de
+  migraciones como parte del deploy (por ejemplo, un build command en
+  Render que corra `psql -f` sobre los archivos nuevos de
+  `db/migrations/`) para que este tipo de olvido deje de ser posible.
+- Recomendación ya anotada y que sigue vigente: si se vuelve a rotar o
+  recrear el rol de conexión de la app (`app_service` u otro), revisar
+  explícitamente que tenga `BYPASSRLS`, y que toda tabla nueva sume
+  `ENABLE ROW LEVEL SECURITY` en la misma migración que la crea — ambos
+  puntos fallaron una vez cada uno esta semana precisamente por no estar
+  en ningún checklist.
