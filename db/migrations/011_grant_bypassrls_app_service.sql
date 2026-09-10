@@ -1,0 +1,58 @@
+-- ============================================================================
+-- Migración 011 — app_service necesita BYPASSRLS (la migración 009 asumía
+-- un rol distinto)
+-- Aplica sobre una base que ya tiene las migraciones 001-010.
+-- Ejecutar:  psql "$DATABASE_URL" -f db/migrations/011_grant_bypassrls_app_service.sql
+--
+-- Contexto: esta migración documenta en el repo un cambio ya aplicado
+-- directamente contra el proyecto de Supabase de producción
+-- (ihemxqzuolhmkwikhnlg) el 10 de septiembre, tras diagnosticar por qué
+-- crear una campaña devolvía HTTP 502 e importar participantes devolvía
+-- HTTP 400 en el piloto real.
+--
+-- Motivo: la migración 009 activó RLS en las 12 tablas de public
+-- asumiendo que la app se conecta como el rol `postgres` (BYPASSRLS =
+-- true, confirmado en su momento) -- ver el comentario de
+-- 009_rls_hardening_no_anon_access.sql. En algún punto después de esa
+-- fecha, el DATABASE_URL configurado en Render (servicio
+-- paws-campaign-api) pasó a conectarse como un rol de aplicación
+-- dedicado, `app_service`, que NO tiene BYPASSRLS. Como las 12 tablas
+-- tienen RLS activo sin ninguna policy, Postgres deniega todo por
+-- defecto para cualquier rol que no sea el dueño de la tabla ni tenga
+-- BYPASSRLS:
+--   - un SELECT no lanza error, simplemente no devuelve ninguna fila
+--     (por eso el panel admin mostraba campañas/participantes/plantillas
+--     vacíos sin ningún error visible desde que se aplicó la 009);
+--   - un INSERT sí lanza un error explícito ("new row violates row-level
+--     security policy"), que es justo lo que rompía la creación de
+--     campañas (502, porque routes/campaigns.js no envolvía el INSERT en
+--     try/catch y la excepción sin capturar tumbaba el proceso completo
+--     de Node -- ver docs/2026-09-10_fix-rls-app-service-y-crash-async.md
+--     para el fix de robustez que evita que esto vuelva a tumbar el
+--     servicio, sea cual sea la causa del error de base de datos) y el
+--     import de participantes (400, porque routes/participants.js SÍ
+--     captura el error por fila, así que reportaba "failed" en vez de
+--     colgarse).
+--
+-- Verificado contra pg_tables antes de aplicar esto: las 12 tablas
+-- siguen siendo propiedad de `postgres`; ningún dato se perdió, solo
+-- dejó de ser visible para `app_service`.
+--
+-- El objetivo de la migración 009 siempre fue bloquear a `anon`/
+-- `authenticated` (los roles que usa la API REST autogenerada de
+-- PostgREST expuesta con la anon key pública) sin restringir el acceso
+-- de la propia app. `app_service` es el rol dedicado de la app -- nunca
+-- se expone como anon key pública -- así que otorgarle BYPASSRLS
+-- reproduce exactamente esa intención original con el rol nuevo, en vez
+-- de mantener una policy "permitir todo" por cada tabla (12 hoy, más las
+-- 9 nuevas de la migración 010, y las que vengan) que habría que
+-- recordar sincronizar con cada tabla futura.
+--
+-- IMPORTANTE para quien reconstruya la base desde cero: el rol
+-- `app_service` tiene que existir de antemano (lo crea quien configuró
+-- el DATABASE_URL de Render) y tener ya los GRANT de SELECT/INSERT/
+-- UPDATE/DELETE sobre estas tablas -- BYPASSRLS no otorga privilegios
+-- por sí solo, solo hace que las policies de RLS dejen de aplicarle.
+-- ============================================================================
+
+ALTER ROLE app_service BYPASSRLS;
