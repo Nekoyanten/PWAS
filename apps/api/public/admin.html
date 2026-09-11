@@ -299,6 +299,10 @@ p04,directivo,Equipo 2"></textarea>
       <div class="panel">
         <h2>6 · Compañeros de equipo ficticios</h2>
         <p class="hint">Nombres inventados que aparecen como remitentes en el chat y como responsables de tareas del tablero. Nadie real detrás — son solo ambientación de TaskFlow.</p>
+        <div class="form-actions">
+          <button type="button" id="seedContactsBtn" class="btn-sm">Agregar equipo de ejemplo (5 compañeros)</button>
+          <span id="seedContactsMsg" class="hint"></span>
+        </div>
         <table id="contactsTable"><thead><tr><th>Nombre</th><th>Rol</th><th>Color</th><th></th></tr></thead><tbody></tbody></table>
         <form id="contactForm" class="form-actions" style="margin-top:.6rem">
           <input name="display_name" placeholder="Nombre (ej. Laura Méndez)" required style="padding:.45rem .55rem;border:1px solid #cbd3e1;border-radius:6px">
@@ -311,6 +315,10 @@ p04,directivo,Equipo 2"></textarea>
       <div class="panel">
         <h2>Plantillas de tablero</h2>
         <p class="hint">Un tablero "de fábrica" (columnas y tareas ya cargadas, cada una con su responsable) que el participante puede elegir al crear su primer tablero, en vez de arrancar en blanco.</p>
+        <div class="form-actions">
+          <button type="button" id="seedBoardTplBtn" class="btn-sm">Crear 2 plantillas de ejemplo</button>
+          <span id="seedBoardTplMsg" class="hint"></span>
+        </div>
         <table id="boardTplTable"><thead><tr><th>Nombre</th><th>Columnas</th><th>Tareas</th></tr></thead><tbody></tbody></table>
         <h3>Nueva plantilla de tablero</h3>
         <div class="form-actions">
@@ -327,6 +335,11 @@ p04,directivo,Equipo 2"></textarea>
       <div class="panel">
         <h2>Guiones de chat</h2>
         <p class="hint">Lo que el equipo ya conversó antes de que el participante abra el chat, en orden: un mensaje ambiente de un compañero, o un punto donde se inserta un ataque (plantillas del paso 3). El árbol de respuestas de abajo decide qué pasa después de que el participante conteste — nunca se interpreta texto libre.</p>
+        <div class="form-actions">
+          <button type="button" id="seedChatScriptsBtn" class="btn-sm">Crear 2 guiones de ejemplo</button>
+          <span id="seedChatScriptsMsg" class="hint"></span>
+        </div>
+        <p class="help">Usan plantillas "chat directo" de la biblioteca estándar (paso 3) — si todavía no la creaste ahí, créala primero con "Crear biblioteca estándar".</p>
         <table id="chatScriptTable"><thead><tr><th>Nombre</th><th>Pasos</th></tr></thead><tbody></tbody></table>
         <h3>Nuevo guion de chat</h3>
         <div class="form-actions">

@@ -681,6 +681,16 @@ $("#contactForm").addEventListener("submit", async (e) => {
     await loadContacts(); renderBoardTplCols(); renderChatScriptSteps();
   } catch (err) { alert(err.message); }
 });
+$("#seedContactsBtn").addEventListener("click", async () => {
+  if (!CURRENT_CAMP) return alert("Elige una campaña en el paso 2.");
+  $("#seedContactsMsg").textContent = "Creando…";
+  try {
+    const r = await api("POST", `/api/campaigns/${CURRENT_CAMP}/contacts/seed-defaults`, {});
+    const nuevos = r.contacts.filter((c) => !c.skipped).length;
+    $("#seedContactsMsg").textContent = nuevos ? `${nuevos} compañeros nuevos ✓` : "Ya estaban todos creados ✓";
+    await loadContacts(); renderBoardTplCols(); renderChatScriptSteps();
+  } catch (e) { $("#seedContactsMsg").textContent = "Error: " + e.message; }
+});
 
 /* -------- plantillas de tablero -------- */
 async function loadBoardTemplates() {
@@ -746,6 +756,19 @@ $("#boardTplSave").addEventListener("click", async () => {
     $("#boardTplMsg").textContent = "Plantilla guardada ✓"; loadBoardTemplates();
   } catch (e) { $("#boardTplMsg").textContent = "Error: " + e.message; }
 });
+$("#seedBoardTplBtn").addEventListener("click", async () => {
+  if (!CURRENT_CAMP) return alert("Elige una campaña en el paso 2.");
+  $("#seedBoardTplMsg").textContent = "Creando…";
+  try {
+    const r = await api("POST", `/api/campaigns/${CURRENT_CAMP}/board-templates/seed-defaults`, {});
+    const nuevas = r.board_templates.filter((t) => !t.skipped && !t.error).length;
+    const errores = r.board_templates.filter((t) => t.error);
+    $("#seedBoardTplMsg").textContent = errores.length
+      ? `Error en "${errores[0].name}": ${errores[0].error}`
+      : (nuevas ? `${nuevas} plantillas nuevas ✓` : "Ya estaban todas creadas ✓");
+    await loadBoardTemplates(); await loadContacts(); renderBoardTplCols(); renderChatScriptSteps();
+  } catch (e) { $("#seedBoardTplMsg").textContent = "Error: " + e.message; }
+});
 
 /* -------- guiones de chat -------- */
 async function loadChatScripts() {
@@ -806,6 +829,19 @@ $("#chatScriptSave").addEventListener("click", async () => {
     $("#chatScriptName").value = ""; chatScriptSteps = []; renderChatScriptSteps();
     $("#chatScriptMsg").textContent = "Guion guardado ✓"; loadChatScripts();
   } catch (e) { $("#chatScriptMsg").textContent = "Error: " + e.message; }
+});
+$("#seedChatScriptsBtn").addEventListener("click", async () => {
+  if (!CURRENT_CAMP) return alert("Elige una campaña en el paso 2.");
+  $("#seedChatScriptsMsg").textContent = "Creando…";
+  try {
+    const r = await api("POST", `/api/campaigns/${CURRENT_CAMP}/chat-scripts/seed-defaults`, {});
+    const nuevos = r.chat_scripts.filter((s) => !s.skipped && !s.error).length;
+    const errores = r.chat_scripts.filter((s) => s.error);
+    $("#seedChatScriptsMsg").textContent = errores.length
+      ? `${errores[0].error}`
+      : (nuevos ? `${nuevos} guiones nuevos ✓` : "Ya estaban todos creados ✓");
+    await loadChatScripts(); await loadContacts(); renderBoardTplCols(); renderChatScriptSteps();
+  } catch (e) { $("#seedChatScriptsMsg").textContent = "Error: " + e.message; }
 });
 
 /* -------- árbol de respuestas -------- */
