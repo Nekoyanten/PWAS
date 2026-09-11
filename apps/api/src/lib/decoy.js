@@ -185,6 +185,8 @@ button{font:inherit}
 .bubble .sender{font-size:.72rem;font-weight:650;color:var(--brand);margin-bottom:.15rem}
 .bubble.attack{border:1px solid var(--warn);background:#fff8f7}
 .bubble .attack-subject{font-weight:650;margin-bottom:.25rem}
+.bubble .quick-replies{padding:.5rem 0 0;margin:0}
+.bubble .quick-replies .qr-label{color:var(--ink-2)}
 .chat-input{display:flex;gap:.5rem;padding-top:.7rem;border-top:1px solid var(--line)}
 .chat-input textarea{flex:1;resize:none;padding:.6rem .75rem;border:1px solid var(--line);border-radius:10px;font:inherit;font-size:.9rem}
 
@@ -528,71 +530,31 @@ export function renderApp(token, { inbox, view, boardsData, contacts, boardTempl
                   <div class="col-head"><span class="t" x-text="col.name"></span><span class="n" x-text="col.tasks.length"></span></div>
 
                   <template x-for="task in col.tasks" :key="task.id">
-                    <div class="tcard" draggable="true"
-                         @dragstart="drag(task.id, col.id)" @dragend="dragId = null; overCol = null">
-                      <template x-if="editId === task.id">
-                        <form class="tcard-edit" @submit.prevent="saveEdit(task)">
-                          <textarea x-model="editTitle" x-ref="edit" rows="2" placeholder="Título de la tarea"
-                                    @keydown.escape="editId = null"></textarea>
-                          <textarea x-model="editDesc" rows="2" placeholder="Descripción (qué hace esta tarea)"></textarea>
-                          <select class="responsible-select" x-model="editResp">
-                            <option value="">Sin responsable</option>
-                            <template x-for="c in contacts" :key="c.id"><option :value="c.id" x-text="c.display_name + (c.role_label ? ' · ' + c.role_label : '')"></option></template>
-                          </select>
-                          <div class="prio-pick-row">
-                            <template x-for="p in ['alta','media','baja']" :key="p">
-                              <button type="button" class="prio-pick" :class="['prio-' + p, { active: editPriority === p }]" @click="editPriority = p" x-text="p"></button>
-                            </template>
-                          </div>
-                          <div class="edit-checklist-label">Checklist</div>
-                          <ul class="edit-checklist">
-                            <template x-for="(item, i) in editChecklist" :key="i">
-                              <li>
-                                <label>
-                                  <input type="checkbox" :checked="item.done" @change="item.done = $event.target.checked">
-                                  <span x-text="item.title" :style="{ textDecoration: item.done ? 'line-through' : 'none' }"></span>
-                                </label>
-                                <button type="button" class="tcard-btn" @click="editChecklist.splice(i, 1)" title="Quitar ítem">${I.trash}</button>
-                              </li>
-                            </template>
-                          </ul>
-                          <div class="edit-checklist-add">
-                            <input type="text" x-model="editChecklistNew" placeholder="Nuevo ítem del checklist" @keydown.enter.prevent="addEditChecklistItem()">
-                            <button type="button" class="btn tiny ghost" @click="addEditChecklistItem()">+ Añadir</button>
-                          </div>
-                          <div class="tcard-actions">
-                            <button class="btn tiny" type="submit">Guardar</button>
-                            <button class="btn tiny ghost" type="button" @click="editId = null">Cancelar</button>
-                          </div>
-                        </form>
-                      </template>
-                      <template x-if="editId !== task.id">
-                        <div>
-                          <div class="tcard-top">
-                            <span class="prio-badge" :class="'prio-' + (task.priority || 'media')" x-text="task.priority || 'media'"></span>
-                          </div>
-                          <div class="tt" x-text="task.title" @dblclick="startEdit(task)" title="Doble clic para editar"></div>
-                          <div class="desc" x-show="task.description" x-text="task.description"></div>
-                          <div class="tcard-check" x-show="(task.checklist || []).length">
-                            <div class="tcard-check-label">
-                              <span>Subtareas</span>
-                              <span x-text="(task.checklist || []).filter(c => c.done).length + '/' + (task.checklist || []).length"></span>
-                            </div>
-                            <div class="tcard-check-bar"><div class="tcard-check-fill" :style="{ width: checklistPct(task) + '%' }"></div></div>
-                          </div>
-                          <div class="foot">
-                            <span class="meta" x-show="task.responsible_contact_id">
-                              <span class="avatar" :style="{ background: task.responsible_color || '#9aa1ad' }" x-text="(task.responsible_name || '?').split(' ').slice(0,2).map(w => w[0]).join('').toUpperCase()"></span>
-                              <span x-text="task.responsible_name"></span>
-                            </span>
-                            <span class="meta" x-show="!task.responsible_contact_id" style="color:var(--faint)">Sin responsable</span>
-                            <span class="tcard-tools">
-                              <button class="tcard-btn" type="button" @click="startEdit(task)" title="Editar">${I.pencil}</button>
-                              <button class="tcard-btn" type="button" @click="removeTask(col.id, task.id)" title="Eliminar">${I.trash}</button>
-                            </span>
-                          </div>
+                    <div class="tcard" :class="{ active: editId === task.id }" draggable="true"
+                         @dragstart="drag(task.id, col.id)" @dragend="dragId = null; overCol = null"
+                         @click="openDetail(task, col.id)">
+                      <div class="tcard-top">
+                        <span class="prio-badge" :class="'prio-' + (task.priority || 'media')" x-text="task.priority || 'media'"></span>
+                      </div>
+                      <div class="tt" x-text="task.title"></div>
+                      <div class="desc" x-show="task.description" x-text="task.description"></div>
+                      <div class="tcard-check" x-show="(task.checklist || []).length">
+                        <div class="tcard-check-label">
+                          <span>Subtareas</span>
+                          <span x-text="(task.checklist || []).filter(c => c.done).length + '/' + (task.checklist || []).length"></span>
                         </div>
-                      </template>
+                        <div class="tcard-check-bar"><div class="tcard-check-fill" :style="{ width: checklistPct(task) + '%' }"></div></div>
+                      </div>
+                      <div class="foot">
+                        <span class="meta" x-show="task.responsible_contact_id">
+                          <span class="avatar" :style="{ background: task.responsible_color || '#9aa1ad' }" x-text="(task.responsible_name || '?').split(' ').slice(0,2).map(w => w[0]).join('').toUpperCase()"></span>
+                          <span x-text="task.responsible_name"></span>
+                        </span>
+                        <span class="meta" x-show="!task.responsible_contact_id" style="color:var(--faint)">Sin responsable</span>
+                        <span class="tcard-tools">
+                          <button class="tcard-btn" type="button" @click.stop="removeTask(col.id, task.id)" title="Eliminar">${I.trash}</button>
+                        </span>
+                      </div>
                     </div>
                   </template>
 
@@ -624,6 +586,57 @@ export function renderApp(token, { inbox, view, boardsData, contacts, boardTempl
             </div>
           </div>
         </template>
+
+        <aside class="task-detail" x-show="editId" x-cloak x-transition>
+          <div class="detail-hd">
+            <div class="detail-eyebrow" x-text="detailColumnName() + (board ? ' · ' + board.name : '')"></div>
+            <button type="button" class="detail-close" @click="closeDetail()" title="Cerrar panel" aria-label="Cerrar panel">&times;</button>
+          </div>
+          <div class="detail-bd">
+            <textarea class="detail-title" x-model="editTitle" rows="2" placeholder="Título de la tarea" @blur="saveEdit()"></textarea>
+            <textarea class="detail-desc" x-model="editDesc" rows="4" placeholder="Descripción (qué hace esta tarea)" @blur="saveEdit()"></textarea>
+
+            <div class="detail-field">
+              <div class="detail-label">Responsable</div>
+              <select class="responsible-select" x-model="editResp" @change="saveEdit()">
+                <option value="">Sin responsable</option>
+                <template x-for="c in contacts" :key="c.id"><option :value="c.id" x-text="c.display_name + (c.role_label ? ' · ' + c.role_label : '')"></option></template>
+              </select>
+            </div>
+
+            <div class="detail-field">
+              <div class="detail-label">Prioridad</div>
+              <div class="prio-pick-row">
+                <template x-for="p in ['alta','media','baja']" :key="p">
+                  <button type="button" class="prio-pick" :class="['prio-' + p, { active: editPriority === p }]" @click="editPriority = p; saveEdit()" x-text="p"></button>
+                </template>
+              </div>
+            </div>
+
+            <div class="detail-field">
+              <div class="detail-label"><span>Checklist</span><span x-text="editChecklist.filter(c => c.done).length + '/' + editChecklist.length"></span></div>
+              <ul class="edit-checklist">
+                <template x-for="(item, i) in editChecklist" :key="i">
+                  <li>
+                    <label>
+                      <input type="checkbox" :checked="item.done" @change="item.done = $event.target.checked; saveEdit()">
+                      <span x-text="item.title" :style="{ textDecoration: item.done ? 'line-through' : 'none' }"></span>
+                    </label>
+                    <button type="button" class="tcard-btn" @click="editChecklist.splice(i, 1); saveEdit()" title="Quitar ítem">${I.trash}</button>
+                  </li>
+                </template>
+              </ul>
+              <div class="edit-checklist-add">
+                <input type="text" x-model="editChecklistNew" placeholder="Nuevo ítem del checklist" @keydown.enter.prevent="addEditChecklistItem(); saveEdit()">
+                <button type="button" class="btn tiny ghost" @click="addEditChecklistItem(); saveEdit()">+ Añadir</button>
+              </div>
+            </div>
+
+            <div class="detail-actions">
+              <button class="btn ghost tiny" type="button" @click="removeTask(detailColId, editId); closeDetail()">${I.trash}<span>Eliminar tarjeta</span></button>
+            </div>
+          </div>
+        </aside>
       </div>
       <aside class="inbox tf-side" id="inbox" x-data="{ tab: 'bandeja' }" x-on:tf-panel.window="tab = $event.detail.tab">
         <div class="side-tabs">
@@ -646,6 +659,13 @@ export function renderApp(token, { inbox, view, boardsData, contacts, boardTempl
                     <div>
                       <div class="attack-subject" x-text="m.attack_subject"></div>
                       <a class="btn tiny" :href="'/t/${t}/d/' + m.delivery_id" x-text="m.attack_cta || 'Abrir'"></a>
+                      <div class="quick-replies" x-show="(m.branches || []).length">
+                        <div class="qr-label">Responder:</div>
+                        <template x-for="b in (m.branches || [])" :key="b.action_key">
+                          <button class="btn ghost tiny" type="button" x-text="b.action_label"
+                            @click="chooseBranch(m.delivery_id, b.action_key, m, $event.target)"></button>
+                        </template>
+                      </div>
                     </div>
                   </template>
                   <template x-if="m.kind !== 'attack'"><span x-text="m.body"></span></template>
@@ -717,7 +737,7 @@ function tfBoards(){
     boards: TF_BOARDS, contacts: TF_CONTACTS, boardTemplates: TF_BOARD_TEMPLATES,
     activeBoard: TF_BOARDS.length ? TF_BOARDS[0].id : null,
     dragId: null, dragFrom: null, overCol: null,
-    editId: null, editTitle: '', editDesc: '', editResp: '', editPriority: 'media', editChecklist: [], editChecklistNew: '',
+    editId: null, detailColId: null, editTitle: '', editDesc: '', editResp: '', editPriority: 'media', editChecklist: [], editChecklistNew: '',
     addCol: null, addTitle: '', addDesc: '', addResp: '',
     newBoardOpen: false, newBoardName: '', newBoardTemplate: '',
     get board(){ var self=this; return this.boards.find(function(b){ return b.id===self.activeBoard; }) || null; },
@@ -743,7 +763,7 @@ function tfBoards(){
           });
         });
     },
-    startAdd(colId){ this.editId=null; this.addCol=colId; this.addTitle=''; this.addDesc=''; this.addResp=''; this.$nextTick(function(){ this.$refs.add && this.$refs.add.focus(); }.bind(this)); },
+    startAdd(colId){ this.closeDetail(); this.addCol=colId; this.addTitle=''; this.addDesc=''; this.addResp=''; this.$nextTick(function(){ this.$refs.add && this.$refs.add.focus(); }.bind(this)); },
     addTask(colId){
       var title=(this.addTitle||'').trim(); if(!title) return;
       var self=this, boardId=this.activeBoard;
@@ -755,12 +775,21 @@ function tfBoards(){
           self.addCol=null; self.addTitle=''; self.addDesc=''; self.addResp=''; self.sync();
         });
     },
-    startEdit(task){
-      this.addCol=null; this.editId=task.id; this.editTitle=task.title; this.editDesc=task.description||''; this.editResp=task.responsible_contact_id||'';
+    // Abre el panel lateral "Detalle" para una tarjeta (reemplaza la edición
+    // inline que había antes en la propia tarjeta): un único lugar de edición,
+    // igual de conectado al backend real (mismo PATCH que ya existía).
+    openDetail(task, colId){
+      this.addCol=null; this.editId=task.id; this.detailColId=colId;
+      this.editTitle=task.title; this.editDesc=task.description||''; this.editResp=task.responsible_contact_id||'';
       this.editPriority=task.priority||'media';
       this.editChecklist=(task.checklist||[]).map(function(item){ return { title: item.title, done: !!item.done }; });
       this.editChecklistNew='';
-      this.$nextTick(function(){ this.$refs.edit && this.$refs.edit.focus(); }.bind(this));
+    },
+    closeDetail(){ this.editId=null; this.detailColId=null; },
+    detailColumnName(){
+      if(!this.board || !this.detailColId) return '';
+      var col=this.board.columns.find(function(c){ return c.id===this.detailColId; }, this);
+      return col ? col.name : '';
     },
     addEditChecklistItem(){
       var title=(this.editChecklistNew||'').trim(); if(!title) return;
@@ -771,7 +800,19 @@ function tfBoards(){
       var list=task.checklist||[]; if(!list.length) return 0;
       return Math.round(list.filter(function(c){ return c.done; }).length / list.length * 100);
     },
-    saveEdit(task){
+    get detailTask(){
+      if(!this.editId || !this.board) return null;
+      for (var i=0;i<this.board.columns.length;i++){
+        var t=this.board.columns[i].tasks.find(function(x){ return x.id===this.editId; }, this);
+        if(t) return t;
+      }
+      return null;
+    },
+    // Autoguarda en cada cambio del panel de detalle (blur de texto, cambio
+    // de responsable/prioridad, toggle de checklist) -- mismo PATCH que antes
+    // usaba el formulario inline, solo que ahora vive en un solo lugar.
+    saveEdit(){
+      var task=this.detailTask; if(!task) return;
       var self=this, boardId=this.activeBoard;
       tfApi('/boards/'+boardId+'/tasks/'+task.id, {
         method:'PATCH',
@@ -786,7 +827,7 @@ function tfBoards(){
             var c=self.contacts.find(function(x){ return x.id===task.responsible_contact_id; });
             task.responsible_name = c ? c.display_name : null; task.responsible_color = c ? c.avatar_color : null;
           }
-          self.editId=null; self.sync();
+          self.sync();
         });
     },
     removeTask(colId, taskId){
@@ -794,7 +835,7 @@ function tfBoards(){
       tfApi('/boards/'+boardId+'/tasks/'+taskId, { method:'DELETE' }).then(function(){
         var col=self.board.columns.find(function(c){ return c.id===colId; });
         if(col) col.tasks = col.tasks.filter(function(t){ return t.id!==taskId; });
-        if(self.editId===taskId) self.editId=null;
+        if(self.editId===taskId) self.closeDetail();
         self.sync();
       });
     },
@@ -843,6 +884,22 @@ function tfChat(){
         tfPing();
         self.$nextTick(function(){ self.scrollDown(); });
       });
+    },
+    // Botón de respuesta rápida sobre un ataque de chat (árbol de respuestas,
+    // migración 010) -- misma ruta /d/:deliveryId/branch que ya usa la
+    // tarjeta de mensaje de la bandeja (tfBranch más abajo), pero sin salir
+    // del hilo: se recarga el hilo completo (en vez de armar la burbuja
+    // nueva a mano acá) para que chat.js siga siendo la única fuente de
+    // verdad sobre cómo se ve un mensaje de chat.
+    chooseBranch(deliveryId, actionKey, msg, btn){
+      if(btn) btn.disabled = true;
+      var self=this;
+      tfApi('/d/'+deliveryId+'/branch', { method:'POST', body: JSON.stringify({ action_key: actionKey }) }).then(function(data){
+        if(data && data.error){ if(btn) btn.disabled = false; alert(data.error); return; }
+        msg.branches = [];
+        tfPing();
+        if(data && data.appended_to_chat) self.init();
+      }).catch(function(){ if(btn) btn.disabled = false; });
     },
   };
 }
@@ -946,10 +1003,26 @@ ${behaviorCaptureTag(token, "app")}`, {
 .tcard-btn{background:none;border:0;cursor:pointer;color:var(--faint);padding:.2rem;border-radius:5px;display:inline-flex;align-items:center}
 .tcard-btn:hover{background:var(--line-soft);color:var(--warn)}
 .tcard-btn svg{width:14px;height:14px}
-.tcard-edit textarea,.tcard-add textarea{width:100%;border:1px solid var(--line);border-radius:8px;padding:.45rem .55rem;font:inherit;font-size:.88rem;line-height:1.4;resize:vertical;background:#fff;color:var(--ink)}
-.tcard-edit textarea:focus,.tcard-add textarea:focus{outline:2px solid var(--brand-tint);border-color:var(--brand)}
+.tcard-add textarea{width:100%;border:1px solid var(--line);border-radius:8px;padding:.45rem .55rem;font:inherit;font-size:.88rem;line-height:1.4;resize:vertical;background:#fff;color:var(--ink)}
+.tcard-add textarea:focus{outline:2px solid var(--brand-tint);border-color:var(--brand)}
 .tcard.tcard-add{box-shadow:none;border-style:dashed;cursor:default}
 .tcard-actions{display:flex;gap:.4rem;margin-top:.5rem}
+.tcard.active{outline:2px solid var(--brand);outline-offset:-2px}
+
+/* ---------- panel "Detalle" de tarjeta (slide-over) ---------- */
+.task-detail{position:fixed;top:0;right:0;bottom:0;width:360px;max-width:92vw;background:var(--surface);border-left:1px solid var(--line);box-shadow:var(--shadow-lg);z-index:30;display:flex;flex-direction:column;overflow-y:auto}
+.detail-hd{display:flex;align-items:flex-start;justify-content:space-between;gap:.6rem;padding:1rem 1.1rem .3rem;flex:none}
+.detail-eyebrow{font-size:.68rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding-top:.3rem}
+.detail-close{background:none;border:0;font-size:1.35rem;line-height:1;color:var(--faint);cursor:pointer;padding:.1rem .4rem;border-radius:6px}
+.detail-close:hover{background:var(--line-soft);color:var(--ink-2)}
+.detail-bd{padding:.3rem 1.1rem 1.3rem;display:flex;flex-direction:column;gap:1rem}
+.detail-title{font-size:1.05rem;font-weight:650;border:0;background:none;resize:none;padding:.2rem 0;font-family:inherit;color:var(--ink);width:100%}
+.detail-title:focus{outline:none;background:var(--line-soft);border-radius:6px}
+.detail-desc{border:1px solid var(--line);border-radius:8px;padding:.55rem .65rem;font:inherit;font-size:.86rem;resize:vertical;color:var(--ink-2);width:100%}
+.detail-field{display:flex;flex-direction:column;gap:.35rem}
+.detail-label{font-size:.72rem;font-weight:650;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);display:flex;justify-content:space-between}
+.detail-actions{border-top:1px solid var(--line-soft);padding-top:.9rem}
+@media(max-width:600px){.task-detail{width:100vw;max-width:100vw}}
 
 /* ---------- prioridad y checklist de tarjeta (migración 013) ---------- */
 .tcard-top{display:flex;gap:.35rem;flex-wrap:wrap;margin-bottom:.4rem}

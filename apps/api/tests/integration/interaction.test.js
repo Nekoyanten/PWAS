@@ -251,6 +251,12 @@ test("chat: instanciación de guion (scripted + ataque), respuesta libre y árbo
   assert.ok(chatJson1.messages[1].delivery_id);
   const deliveryId = chatJson1.messages[1].delivery_id;
 
+  // el chat en sí (no solo la tarjeta de bandeja) trae las ramas del árbol
+  // de respuestas de este ataque, para poder ofrecer los botones de
+  // respuesta rápida sin que el participante tenga que salir del hilo.
+  assert.equal(chatJson1.messages[1].branches.length, 1);
+  assert.equal(chatJson1.messages[1].branches[0].action_key, "no_puedo_ahora");
+
   // se creó de verdad el message+delivery+evento 'entregado' (misma tubería que un correo)
   const deliveredEvent = await pool.query(`SELECT 1 FROM events WHERE delivery_id = $1 AND event_type = 'entregado'`, [deliveryId]);
   assert.equal(deliveredEvent.rows.length, 1);
@@ -287,6 +293,12 @@ test("chat: instanciación de guion (scripted + ataque), respuesta libre y árbo
   assert.equal(finalChat.messages.length, 4, "el siguiente ataque de la rama se agrega al mismo hilo");
   assert.equal(finalChat.messages[3].kind, "attack");
   assert.equal(finalChat.messages[3].attack_subject, "Es urgente, necesito eso ya");
+
+  // el ataque ya contestado no debe seguir ofreciendo los mismos botones
+  // (evita responder el mismo ataque de chat más de una vez); el nuevo
+  // ataque de la rama (t2) no tiene ramas propias definidas en este test.
+  assert.equal(finalChat.messages[1].branches.length, 0, "el ataque ya respondido no repite sus botones");
+  assert.equal(finalChat.messages[3].branches.length, 0);
 
   // acción inválida sobre el delivery
   const badAction = await hop(`/t/${p.token}/d/${deliveryId}/branch`, {
@@ -460,4 +472,73 @@ test("plantillas 'chat directo': se pueden guardar con kind='chat' y el dashboar
   const chatCanal = overview.body.por_canal.find((r) => r.clave === "chat");
   assert.ok(chatCanal, "hay una fila 'chat' en por_canal tras entregar un ataque por chat");
   assert.ok(chatCanal.expuestos >= 1);
+});
+
+test("semillas de un clic (paso 6): compañeros, plantillas de tablero y guiones de chat de ejemplo, idempotentes", async () => {
+  // Pedido del usuario: poder "presionar" en vez de crear todo desde cero en
+  // el módulo de interacción, igual que ya existía para la biblioteca de
+  // mensajes (POST /api/templates/seed-defaults).
+  const campaignId = (await api("POST", "/api/campaigns", { name: `Seed int ${Date.now()}` })).body.campaign.id;
+
+  const seedContacts1 = await api("POST", `/api/campaigns/${campaignId}/contacts/seed-defaults`, {});
+  assert.equal(seedContacts1.status, 201);
+  assert.equal(seedContacts1.body.total, 5);
+  assert.ok(seedContacts1.body.contacts.every((c) => !c.skipped), "la primera vez no debería saltarse ninguno");
+
+  // segunda vez: idempotente, no duplica
+  const seedContacts2 = await api("POST", `/api/campaigns/${campaignId}/contacts/seed-defaults`, {});
+  assert.ok(seedContacts2.body.contacts.every((c) => c.skipped), "la segunda vez debería saltarse todos");
+  const contactsList = await api("GET", `/api/campaigns/${campaignId}/contacts`);
+  assert.equal(contactsList.body.contacts.length, 5, "no se duplican compañeros entre llamadas");
+
+  // plantillas de tablero de ejemplo: no depende de haber corrido el seed de
+  // compañeros antes -- debe crear los que hagan falta por su cuenta.
+  const freshCampaignId = (await api("POST", "/api/campaigns", { name: `Seed board ${Date.now()}` })).body.campaign.id;
+  const seedBoards = await api("POST", `/api/campaigns/${freshCampaignId}/board-templates/seed-defaults`, {});
+  assert.equal(seedBoards.status, 201);
+  assert.equal(seedBoards.body.total, 2);
+  assert.ok(seedBoards.body.board_templates.every((t) => !t.skipped && !t.error));
+  const boardsList = await api("GET", `/api/campaigns/${freshCampaignId}/board-templates`);
+  const seedRows = boardsList.body.board_templates.find((t) => t.name === "Lanzamiento de producto Q4").seed;
+  const firstTask = seedRows[0].tasks[0];
+  assert.ok(firstTask.responsible_contact_id, "la tarea de ejemplo queda con un responsable real, no null");
+  assert.equal(firstTask.priority, "alta");
+  assert.ok(firstTask.checklist.length > 0);
+  const contactsAfterBoards = await api("GET", `/api/campaigns/${freshCampaignId}/contacts`);
+  assert.ok(contactsAfterBoards.body.contacts.some((c) => c.display_name === "Laura Méndez"),
+    "sembrar plantillas de tablero crea los compañeros que necesita, sin depender de otro botón");
+
+  // segunda vez: idempotente
+  const seedBoards2 = await api("POST", `/api/campaigns/${freshCampaignId}/board-templates/seed-defaults`, {});
+  assert.ok(seedBoards2.body.board_templates.every((t) => t.skipped));
+
+  // guiones de chat de ejemplo: referencian plantillas "chat directo" reales
+  // de la biblioteca estándar por nombre -- si no existen, se informa cuál
+  // falta en vez de crear un guion roto. Las plantillas son globales (no por
+  // campaña) y otras pruebas de esta misma suite ya pueden haber corrido
+  // /api/templates/seed-defaults antes que esta -- para probar el camino de
+  // "falta la plantilla" sin depender del orden de ejecución, se borra
+  // puntualmente la que necesita este guion (si existe) antes de sembrar, y
+  // se restaura después con el propio seed-defaults de plantillas
+  // (idempotente, no afecta a las demás pruebas).
+  const freshCampaignId2 = (await api("POST", "/api/campaigns", { name: `Seed chat ${Date.now()}` })).body.campaign.id;
+  const existingList = await api("GET", "/api/templates");
+  const urgenciaTpl = existingList.body.templates.find((t) => t.name === "Urgencia — Chat: se cae la demo si no confirmas ya");
+  if (urgenciaTpl) await api("DELETE", `/api/templates/${urgenciaTpl.id}`);
+
+  const seedChatsMissing = await api("POST", `/api/campaigns/${freshCampaignId2}/chat-scripts/seed-defaults`, {});
+  assert.equal(seedChatsMissing.status, 201);
+  const urgenciaAttempt1 = seedChatsMissing.body.chat_scripts.find((s) => s.name === "Guion — Urgencia por chat");
+  assert.ok(urgenciaAttempt1.error, "sin la plantilla que necesita, avisa cuál falta en vez de fallar en silencio o crear un guion incompleto");
+
+  await api("POST", "/api/templates/seed-defaults", {}); // restaura la plantilla borrada arriba (idempotente para las demás)
+  const seedChats = await api("POST", `/api/campaigns/${freshCampaignId2}/chat-scripts/seed-defaults`, {});
+  assert.equal(seedChats.status, 201);
+  const urgenciaAttempt2 = seedChats.body.chat_scripts.find((s) => s.name === "Guion — Urgencia por chat");
+  assert.ok(!urgenciaAttempt2.error && !urgenciaAttempt2.skipped, "con la plantilla ya restaurada, el guion que antes falló ahora se crea");
+  const chatScriptsList = await api("GET", `/api/campaigns/${freshCampaignId2}/chat-scripts`);
+  const urgenciaScript = chatScriptsList.body.chat_scripts.find((s) => s.name === "Guion — Urgencia por chat");
+  assert.equal(urgenciaScript.script.length, 2);
+  assert.equal(urgenciaScript.script[1].type, "attack");
+  assert.ok(urgenciaScript.script[1].template_id, "el paso de ataque queda con un template_id real de la biblioteca estándar");
 });
