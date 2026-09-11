@@ -472,6 +472,19 @@ $("#sendAllBtn").addEventListener("click", () => {
 });
 
 /* ================= 5 · RESULTADOS ================= */
+const ROLE_LABEL = { estudiante: "estudiante", profesor: "profesor", directivo: "directivo" };
+function renderAttackBreakdown(tableId, rows, labelMap) {
+  const tbody = $(`#${tableId} tbody`);
+  tbody.innerHTML = (rows || []).length
+    ? rows.map((r) => `<tr>
+        <td>${esc((labelMap && labelMap[r.clave]) || r.clave)}</td>
+        <td>${r.expuestos}</td><td>${r.abrieron}</td><td>${r.hicieron_clic}</td>
+        <td>${r.cayeron}</td><td>${r.reportaron}</td>
+        <td>${r.conversion_pct != null ? r.conversion_pct + "%" : "—"}</td>
+        <td>${r.tiempo_reaccion_ms != null ? Math.round(r.tiempo_reaccion_ms) + "ms" : "—"}</td>
+      </tr>`).join("")
+    : `<tr><td colspan="8" class="hint">Todavía no hay ataques enviados.</td></tr>`;
+}
 async function loadResults() {
   try {
     const d = await api("GET", "/api/dashboard/overview");
@@ -483,7 +496,17 @@ async function loadResults() {
       { v: (d.percepcion?.reconocieron_pct ?? 0) + "%", l: "Reconocieron la simulación" },
     ];
     $("#resCards").innerHTML = cards.map((c) => `<div class="card"><div class="value">${c.v}</div><div class="label">${c.l}</div></div>`).join("");
-  } catch (e) { $("#resCards").innerHTML = `<p class="hint">Error: ${esc(e.message)}</p>`; }
+    // por_tecnica/por_rol ya los calculaba este mismo endpoint desde hace
+    // tiempo, pero nunca se pintaban en ningún lado del panel admin -- se
+    // quedaban en la respuesta JSON sin que el admin pudiera verlos. Es la
+    // única forma hoy de ver "qué técnica engancha más" sin abrir la base a
+    // mano.
+    renderAttackBreakdown("tecnicaTable", d.por_tecnica, VEC_LABEL);
+    renderAttackBreakdown("rolTable", d.por_rol, ROLE_LABEL);
+  } catch (e) {
+    $("#resCards").innerHTML = `<p class="hint">Error: ${esc(e.message)}</p>`;
+    $("#tecnicaTable tbody").innerHTML = $("#rolTable tbody").innerHTML = `<tr><td colspan="8" class="hint">Error al cargar.</td></tr>`;
+  }
   loadBehaviorSummary();
   loadFeaturesSummary();
   loadRiskSummary();

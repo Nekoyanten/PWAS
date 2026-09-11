@@ -97,12 +97,21 @@ async function instantiateScript(client, pc, thread) {
   // distinta de 1, es una mejora aparte (ver docs).
 }
 
+// Antes esta consulta NO traía el árbol de respuestas (message_branches) de
+// un ataque de chat, así que la única forma de contestarlo era hacer clic en
+// "Abrir" y salir del chat hacia la tarjeta de mensaje de siempre (que sí
+// arma sus propios botones de respuesta rápida, ver renderMessage en
+// decoy.js) -- el chat en sí nunca tenía nada con qué "responder" un
+// ataque, lo que lo hacía sentir roto/inerte aunque el mecanismo de branching
+// funcionara bien del lado del correo. Se corrige trayendo las ramas
+// disponibles por cada mensaje de tipo 'attack', para que la burbuja del
+// chat pueda ofrecer los mismos botones sin salir del hilo.
 export async function loadThreadMessages(threadId) {
   const r = await query(
     `SELECT cm.id, cm.kind, cm.body, cm.position, cm.created_at,
             fc.id AS sender_id, fc.display_name AS sender_name, fc.avatar_color AS sender_color,
             d.id AS delivery_id, m.subject AS attack_subject, m.cta_label AS attack_cta, m.is_attack,
-            m.id AS attack_message_id, m.template_id AS attack_template_id
+            m.id AS attack_message_id, m.template_id AS attack_template_id, m.parent_message_id
      FROM chat_messages cm
      LEFT JOIN fictitious_contacts fc ON fc.id = cm.sender_contact_id
      LEFT JOIN deliveries d ON d.id = cm.delivery_id
@@ -111,7 +120,35 @@ export async function loadThreadMessages(threadId) {
      ORDER BY cm.position, cm.created_at`,
     [threadId]
   );
-  return r.rows;
+  const rows = r.rows;
+
+  // Un solo IN en vez de una consulta de ramas por cada mensaje de ataque
+  // (evita N+1 -- un hilo de chat típico tiene pocos ataques, pero no hay
+  // razón para no traerlas todas de un tiro).
+  const templateIds = [...new Set(rows.filter((m) => m.kind === "attack" && m.attack_template_id).map((m) => m.attack_template_id))];
+  const branchesByTemplate = new Map();
+  if (templateIds.length) {
+    const br = await query(
+      `SELECT from_template_id, action_key, action_label FROM message_branches WHERE from_template_id = ANY($1::uuid[]) ORDER BY created_at`,
+      [templateIds]
+    );
+    for (const b of br.rows) {
+      if (!branchesByTemplate.has(b.from_template_id)) branchesByTemplate.set(b.from_template_id, []);
+      branchesByTemplate.get(b.from_template_id).push({ action_key: b.action_key, action_label: b.action_label });
+    }
+  }
+  // Un ataque ya contestado (existe otro message en el mismo hilo cuyo
+  // parent_message_id apunta a este) no debe seguir ofreciendo los mismos
+  // botones -- si no, el participante podría "responder" el mismo ataque
+  // varias veces y generar ataques de seguimiento duplicados en el hilo.
+  const answeredParents = new Set(rows.filter((m) => m.parent_message_id).map((m) => m.parent_message_id));
+
+  return rows.map(({ parent_message_id, ...m }) => ({
+    ...m,
+    branches: m.kind === "attack" && m.attack_template_id && !answeredParents.has(m.attack_message_id)
+      ? (branchesByTemplate.get(m.attack_template_id) || [])
+      : [],
+  }));
 }
 
 export async function appendReply(threadId, body) {

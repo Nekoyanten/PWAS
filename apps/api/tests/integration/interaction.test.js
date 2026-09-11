@@ -251,6 +251,12 @@ test("chat: instanciación de guion (scripted + ataque), respuesta libre y árbo
   assert.ok(chatJson1.messages[1].delivery_id);
   const deliveryId = chatJson1.messages[1].delivery_id;
 
+  // el chat en sí (no solo la tarjeta de bandeja) trae las ramas del árbol
+  // de respuestas de este ataque, para poder ofrecer los botones de
+  // respuesta rápida sin que el participante tenga que salir del hilo.
+  assert.equal(chatJson1.messages[1].branches.length, 1);
+  assert.equal(chatJson1.messages[1].branches[0].action_key, "no_puedo_ahora");
+
   // se creó de verdad el message+delivery+evento 'entregado' (misma tubería que un correo)
   const deliveredEvent = await pool.query(`SELECT 1 FROM events WHERE delivery_id = $1 AND event_type = 'entregado'`, [deliveryId]);
   assert.equal(deliveredEvent.rows.length, 1);
@@ -287,6 +293,12 @@ test("chat: instanciación de guion (scripted + ataque), respuesta libre y árbo
   assert.equal(finalChat.messages.length, 4, "el siguiente ataque de la rama se agrega al mismo hilo");
   assert.equal(finalChat.messages[3].kind, "attack");
   assert.equal(finalChat.messages[3].attack_subject, "Es urgente, necesito eso ya");
+
+  // el ataque ya contestado no debe seguir ofreciendo los mismos botones
+  // (evita responder el mismo ataque de chat más de una vez); el nuevo
+  // ataque de la rama (t2) no tiene ramas propias definidas en este test.
+  assert.equal(finalChat.messages[1].branches.length, 0, "el ataque ya respondido no repite sus botones");
+  assert.equal(finalChat.messages[3].branches.length, 0);
 
   // acción inválida sobre el delivery
   const badAction = await hop(`/t/${p.token}/d/${deliveryId}/branch`, {

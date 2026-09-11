@@ -185,6 +185,8 @@ button{font:inherit}
 .bubble .sender{font-size:.72rem;font-weight:650;color:var(--brand);margin-bottom:.15rem}
 .bubble.attack{border:1px solid var(--warn);background:#fff8f7}
 .bubble .attack-subject{font-weight:650;margin-bottom:.25rem}
+.bubble .quick-replies{padding:.5rem 0 0;margin:0}
+.bubble .quick-replies .qr-label{color:var(--ink-2)}
 .chat-input{display:flex;gap:.5rem;padding-top:.7rem;border-top:1px solid var(--line)}
 .chat-input textarea{flex:1;resize:none;padding:.6rem .75rem;border:1px solid var(--line);border-radius:10px;font:inherit;font-size:.9rem}
 
@@ -657,6 +659,13 @@ export function renderApp(token, { inbox, view, boardsData, contacts, boardTempl
                     <div>
                       <div class="attack-subject" x-text="m.attack_subject"></div>
                       <a class="btn tiny" :href="'/t/${t}/d/' + m.delivery_id" x-text="m.attack_cta || 'Abrir'"></a>
+                      <div class="quick-replies" x-show="(m.branches || []).length">
+                        <div class="qr-label">Responder:</div>
+                        <template x-for="b in (m.branches || [])" :key="b.action_key">
+                          <button class="btn ghost tiny" type="button" x-text="b.action_label"
+                            @click="chooseBranch(m.delivery_id, b.action_key, m, $event.target)"></button>
+                        </template>
+                      </div>
                     </div>
                   </template>
                   <template x-if="m.kind !== 'attack'"><span x-text="m.body"></span></template>
@@ -875,6 +884,22 @@ function tfChat(){
         tfPing();
         self.$nextTick(function(){ self.scrollDown(); });
       });
+    },
+    // Botón de respuesta rápida sobre un ataque de chat (árbol de respuestas,
+    // migración 010) -- misma ruta /d/:deliveryId/branch que ya usa la
+    // tarjeta de mensaje de la bandeja (tfBranch más abajo), pero sin salir
+    // del hilo: se recarga el hilo completo (en vez de armar la burbuja
+    // nueva a mano acá) para que chat.js siga siendo la única fuente de
+    // verdad sobre cómo se ve un mensaje de chat.
+    chooseBranch(deliveryId, actionKey, msg, btn){
+      if(btn) btn.disabled = true;
+      var self=this;
+      tfApi('/d/'+deliveryId+'/branch', { method:'POST', body: JSON.stringify({ action_key: actionKey }) }).then(function(data){
+        if(data && data.error){ if(btn) btn.disabled = false; alert(data.error); return; }
+        msg.branches = [];
+        tfPing();
+        if(data && data.appended_to_chat) self.init();
+      }).catch(function(){ if(btn) btn.disabled = false; });
     },
   };
 }
