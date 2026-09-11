@@ -201,10 +201,13 @@ test("chat: instanciación de guion (scripted + ataque), respuesta libre y árbo
   const contact = await api("POST", `/api/campaigns/${campaignId}/contacts`, { display_name: "Andrés Gómez", role_label: "Compañero de equipo" });
   const senderId = contact.body.contact.id;
 
-  // El "kind" de la PLANTILLA (email|task) no importa para un ataque de
+  // El "kind" de la PLANTILLA (email|task|chat) no importa para un ataque de
   // chat: chat.js fija message.kind='chat' directamente al instanciar el
-  // guion, sin copiarlo de la plantilla (ver lib/chat.js). El validador de
-  // /api/templates tampoco acepta 'chat' como kind de plantilla todavía.
+  // guion, sin copiarlo de la plantilla (ver lib/chat.js) -- por eso estas
+  // dos plantillas de prueba se crean con su kind por defecto ('email') y
+  // aun así terminan entregándose por chat. Que /api/templates SÍ acepte
+  // kind='chat' para etiquetar una plantilla como "de chat directo" se
+  // prueba aparte, más abajo.
   const t1 = await api("POST", "/api/templates", {
     name: `Auth ${Date.now()}`, vector: "autoridad", is_attack: true, channel: "web",
     sender_label: "Andrés Gómez", subject_or_headline: "Necesito que confirmes el acceso",
@@ -412,4 +415,49 @@ test("credenciales de práctica: coincidencia se calcula en memoria y solo se gu
   });
   const d2 = await pool.query(`SELECT credential_match_result FROM deliveries WHERE id = $1`, [deliveryId2]);
   assert.equal(d2.rows[0].credential_match_result, null, "sin credenciales de práctica asignadas, no se calcula coincidencia");
+});
+
+test("plantillas 'chat directo': se pueden guardar con kind='chat' y el dashboard las cuenta por canal", async () => {
+  // Admin: la biblioteca de plantillas ahora acepta un tercer "Formato"
+  // además de correo/tarea -- una plantilla pensada solo para insertarse en
+  // un guion de chat (ver admin.html tab 3 y templates.js KINDS).
+  const tplChat = await api("POST", "/api/templates", {
+    name: `Chat directo ${Date.now()}`, vector: "urgencia", is_attack: true, kind: "chat",
+    sender_label: "Andrés Gómez", subject_or_headline: "¿Puedes confirmarme esto ya?",
+    message_body: "Sistemas me está pidiendo que confirmes tus credenciales del portal ahora mismo.",
+    cta_label: "Confirmar", landing_kind: "form",
+  });
+  assert.equal(tplChat.status, 201);
+  assert.equal(tplChat.body.template.kind, "chat");
+
+  const invalidKind = await api("POST", "/api/templates", {
+    name: `Kind inválido ${Date.now()}`, vector: "urgencia", is_attack: true, kind: "sms",
+    subject_or_headline: "x",
+  });
+  assert.equal(invalidKind.status, 400);
+
+  const campaignId = (await api("POST", "/api/campaigns", { name: `Camp ${Date.now()}` })).body.campaign.id;
+  const contact = await api("POST", `/api/campaigns/${campaignId}/contacts`, { display_name: "Andrés Gómez" });
+  await api("POST", `/api/campaigns/${campaignId}/chat-scripts`, {
+    name: "Guion con plantilla de chat directo",
+    script: [{ type: "attack", template_id: tplChat.body.template.id, sender_contact_id: contact.body.contact.id }],
+  });
+  const p = await makeParticipant(campaignId, `T ${Date.now()}`);
+  const chatJson = await (await hop(`/t/${p.token}/chat.json`)).json();
+  assert.equal(chatJson.messages[0].kind, "attack");
+  const deliveryId = chatJson.messages[0].delivery_id;
+
+  // El ataque quedó registrado como un delivery normal con messages.kind =
+  // 'chat' (chat.js lo fija así al instanciar, ver comentario más arriba) --
+  // por eso el desglose por canal del dashboard debe reflejar este delivery
+  // bajo la clave 'chat'.
+  const kindRow = await pool.query(`SELECT kind FROM messages m JOIN deliveries d ON d.message_id = m.id WHERE d.id = $1`, [deliveryId]);
+  assert.equal(kindRow.rows[0].kind, "chat");
+
+  const overview = await api("GET", "/api/dashboard/overview");
+  assert.equal(overview.status, 200);
+  assert.ok(Array.isArray(overview.body.por_canal), "el overview expone por_canal");
+  const chatCanal = overview.body.por_canal.find((r) => r.clave === "chat");
+  assert.ok(chatCanal, "hay una fila 'chat' en por_canal tras entregar un ataque por chat");
+  assert.ok(chatCanal.expuestos >= 1);
 });

@@ -207,7 +207,7 @@ function attackMetricsSQL(groupCol) {
 }
 
 dashboardRouter.get("/overview", requireAdmin, async (req, res) => {
-  const [totals, byTeam, byRoleVector, reasons, funnel, byTecnica, byRol, percepcion] = await Promise.all([
+  const [totals, byTeam, byRoleVector, reasons, funnel, byTecnica, byRol, byCanal, percepcion] = await Promise.all([
     query(`
       SELECT
         COUNT(DISTINCT pc.id) AS total_expuestos,
@@ -243,6 +243,12 @@ dashboardRouter.get("/overview", requireAdmin, async (req, res) => {
     `),
     query(attackMetricsSQL("m.vector")),
     query(attackMetricsSQL("p.role")),
+    // por_canal (migración 013/admin ampliado): mismo desglose que
+    // por_tecnica/por_rol pero por CÓMO se entregó el ataque -- correo
+    // (bandeja), tarea asignada, o dentro del chat de equipo (m.kind='chat',
+    // ver lib/chat.js). Pedido explícito del equipo para poder "contar" los
+    // ataques por chat desde el panel admin, no solo poder crearlos.
+    query(attackMetricsSQL("m.kind")),
     query(`
       SELECT
         COUNT(*) AS respondieron,
@@ -260,6 +266,7 @@ dashboardRouter.get("/overview", requireAdmin, async (req, res) => {
     embudo: funnel.rows[0],
     por_tecnica: byTecnica.rows,
     por_rol: byRol.rows,
+    por_canal: byCanal.rows,
     percepcion: percepcion.rows[0],
   });
 });

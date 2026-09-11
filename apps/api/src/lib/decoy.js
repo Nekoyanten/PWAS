@@ -32,29 +32,36 @@ function shell(title, bodyHtml, opts = {}) {
 <meta name="format-detection" content="telephone=no,date=no,address=no,email=no">
 <title>${escapeHtml(title)}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;800&display=swap" rel="stylesheet">
 ${opts.head || ""}
 <style>${BASE_CSS}${opts.extraCss || ""}</style></head><body class="${opts.bodyClass || ""}">${bodyHtml}</body></html>`;
 }
 
 const BASE_CSS = `
+/* ═══ "Modernist" — tokens adoptados del prototipo TaskFlow colaborativa:
+   fondo cálido neutro, acento naranja/rojo, tipografía Archivo, bordes
+   rectos (radio 0). Cambiar el LOOK entero de la app señuelo es, adrede,
+   solo esto: retintar las mismas variables que ya usaba cada componente
+   (.btn, .col, .tcard, .rail, etc.) en vez de reescribir cada selector uno
+   por uno — así el rediseño no le toca el comportamiento a nada. ═══ */
 :root{
-  --bg:#f5f6f8; --panel:#fbfbfc; --surface:#ffffff; --line:#e7e8ec; --line-soft:#eef0f3;
-  --ink:#1a1d24; --ink-2:#3b4048; --muted:#6a7180; --faint:#9aa1ad;
-  --brand:#4f46e5; --brand-strong:#4338ca; --brand-tint:#eef0fe;
-  --ok:#0f9d7a; --warn:#d64545;
-  --radius:12px; --radius-sm:9px;
-  --shadow-sm:0 1px 2px rgba(19,24,38,.06);
-  --shadow:0 1px 2px rgba(19,24,38,.05),0 6px 20px rgba(19,24,38,.07);
-  --shadow-lg:0 12px 44px rgba(19,24,38,.16);
+  --bg:#f3f2f2; --panel:#eae7e7; --surface:#ffffff; --line:rgba(32,30,29,.22); --line-soft:rgba(32,30,29,.1);
+  --ink:#201e1d; --ink-2:#3a3735; --muted:#6b6663; --faint:#9b9797;
+  --brand:#ec3013; --brand-strong:#ae1800; --brand-tint:#fff2ef;
+  --ok:#12805c; --warn:#b91c1c;
+  --radius:0px; --radius-sm:0px;
+  --shadow-sm:0 1px 2px rgba(32,30,29,.10);
+  --shadow:0 1px 2px rgba(32,30,29,.08),0 6px 20px rgba(32,30,29,.10);
+  --shadow-lg:0 12px 44px rgba(32,30,29,.20);
 }
 *{box-sizing:border-box}
 html,body{height:100%}
-body{font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;margin:0;background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased;font-size:14px;line-height:1.5}
+body{font-family:"Archivo",system-ui,-apple-system,"Segoe UI",sans-serif;margin:0;background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased;font-size:14px;line-height:1.5}
 a{color:var(--brand);text-decoration:none}
 a:hover{color:var(--brand-strong)}
-h1,h2,h3{letter-spacing:-.012em}
+h1,h2,h3{letter-spacing:-.015em;font-weight:800}
 button{font:inherit}
+.eyebrow{font-size:.68rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
 
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:.45rem;background:var(--brand);color:#fff;border:1px solid var(--brand);border-radius:var(--radius-sm);padding:.6rem 1.05rem;font-weight:600;font-size:.9rem;cursor:pointer;transition:background .12s}
 .btn:hover{background:var(--brand-strong);border-color:var(--brand-strong)}
@@ -128,6 +135,18 @@ button{font:inherit}
 .mrow .pv{font-size:.78rem;color:var(--faint);margin-top:.1rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .mrow.unread .from::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--brand);margin-right:.4rem;vertical-align:middle}
 .inbox .empty{padding:1.3rem 1.05rem;color:var(--faint);font-size:.85rem}
+
+/* ---------- panel lateral de Mis tableros: pestañas Bandeja/Chat ---------- */
+.tf-side{display:flex;flex-direction:column;max-height:calc(100vh - 140px)}
+.side-tabs{display:flex;border-bottom:1px solid var(--line);flex:none}
+.side-tab{flex:1;display:flex;align-items:center;justify-content:center;gap:.4rem;padding:.8rem .5rem;background:none;border:0;border-bottom:2px solid transparent;font:inherit;font-size:.72rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);cursor:pointer}
+.side-tab svg{width:15px;height:15px}
+.side-tab.active{color:var(--brand-strong);border-bottom-color:var(--brand)}
+.side-tab .ib-badge{margin-left:0}
+.side-scroll{overflow-y:auto;flex:1;min-height:0}
+.side-chat{display:flex;flex-direction:column;flex:1;min-height:0}
+.side-chat .chat-scroll{padding:.7rem .9rem}
+.side-chat .chat-input{padding:.6rem .8rem;margin:0}
 
 /* ---------- reading pane ---------- */
 .reader{max-width:760px;margin:0 auto}
@@ -252,11 +271,16 @@ const avatar = (name) => {
 // Las 5 vistas de la app señuelo. En renderApp se conmutan en cliente (sin
 // recarga); en las páginas sueltas (renderMessage) el rail es un enlace normal
 // que vuelve a /app?v=<vista>.
+// "Bandeja" y "Chat de equipo" ya NO son destinos de nav aparte: viven como
+// pestañas del panel lateral dentro de "Mis tableros" (ver viewTablero), al
+// estilo del panel de contexto del prototipo TaskFlow colaborativa. Un
+// data-goto="chat"/"bandeja" (botones de inicio) o un enlace viejo a
+// ?v=chat/?v=bandeja simplemente caen a DEFAULT_VIEW ("tablero") — show()
+// ya tenía ese fallback — y un evento 'tf-panel' le dice al panel lateral
+// qué pestaña abrir (ver el <script> de navegación más abajo).
 const VIEWS = [
   { key: "inicio", icon: I.home, label: "Inicio", title: "Inicio" },
   { key: "tablero", icon: I.board, label: "Mis tableros", title: "Mis tableros" },
-  { key: "bandeja", icon: I.inbox, label: "Bandeja", title: "Bandeja" },
-  { key: "chat", icon: I.chat, label: "Chat de equipo", title: "Chat de equipo" },
   { key: "agenda", icon: I.cal, label: "Agenda", title: "Agenda" },
   { key: "equipo", icon: I.team, label: "Equipo", title: "Equipo" },
 ];
@@ -268,7 +292,9 @@ function rail(active, token, spa) {
   const t = encodeURIComponent(token || "");
   const items = VIEWS.map((v) => {
     const cls = `navitem${active === v.key ? " active" : ""}`;
-    const badge = v.key === "bandeja" ? `<span class="rail-badge" data-ibbadge hidden></span>` : "";
+    // El contador de sin-leer vive en "Mis tableros" (la bandeja ahora es una
+    // pestaña de su panel lateral, no su propio ítem de nav — ver VIEWS).
+    const badge = v.key === "tablero" ? `<span class="rail-badge" data-ibbadge hidden></span>` : "";
     return spa
       ? `<button type="button" class="${cls}" data-view="${v.key}">${v.icon}<span>${v.label}</span>${badge}</button>`
       : `<a class="${cls}" href="/t/${t}/app?v=${v.key}">${v.icon}<span>${v.label}</span>${badge}</a>`;
@@ -461,8 +487,8 @@ export function renderApp(token, { inbox, view, boardsData, contacts, boardTempl
       </div>
       <div class="home-actions">
         <button class="btn" type="button" data-goto="tablero">Ir a mi tablero</button>
-        <button class="btn ghost" type="button" data-goto="bandeja">Ver la bandeja</button>
-        <button class="btn ghost" type="button" data-goto="chat">${I.chat}<span>Chat de equipo</span></button>
+        <button class="btn ghost" type="button" data-goto="tablero" data-panel="bandeja">Ver la bandeja</button>
+        <button class="btn ghost" type="button" data-goto="tablero" data-panel="chat">${I.chat}<span>Chat de equipo</span></button>
       </div>
     </div>`;
 
@@ -513,6 +539,27 @@ export function renderApp(token, { inbox, view, boardsData, contacts, boardTempl
                             <option value="">Sin responsable</option>
                             <template x-for="c in contacts" :key="c.id"><option :value="c.id" x-text="c.display_name + (c.role_label ? ' · ' + c.role_label : '')"></option></template>
                           </select>
+                          <div class="prio-pick-row">
+                            <template x-for="p in ['alta','media','baja']" :key="p">
+                              <button type="button" class="prio-pick" :class="['prio-' + p, { active: editPriority === p }]" @click="editPriority = p" x-text="p"></button>
+                            </template>
+                          </div>
+                          <div class="edit-checklist-label">Checklist</div>
+                          <ul class="edit-checklist">
+                            <template x-for="(item, i) in editChecklist" :key="i">
+                              <li>
+                                <label>
+                                  <input type="checkbox" :checked="item.done" @change="item.done = $event.target.checked">
+                                  <span x-text="item.title" :style="{ textDecoration: item.done ? 'line-through' : 'none' }"></span>
+                                </label>
+                                <button type="button" class="tcard-btn" @click="editChecklist.splice(i, 1)" title="Quitar ítem">${I.trash}</button>
+                              </li>
+                            </template>
+                          </ul>
+                          <div class="edit-checklist-add">
+                            <input type="text" x-model="editChecklistNew" placeholder="Nuevo ítem del checklist" @keydown.enter.prevent="addEditChecklistItem()">
+                            <button type="button" class="btn tiny ghost" @click="addEditChecklistItem()">+ Añadir</button>
+                          </div>
                           <div class="tcard-actions">
                             <button class="btn tiny" type="submit">Guardar</button>
                             <button class="btn tiny ghost" type="button" @click="editId = null">Cancelar</button>
@@ -521,8 +568,18 @@ export function renderApp(token, { inbox, view, boardsData, contacts, boardTempl
                       </template>
                       <template x-if="editId !== task.id">
                         <div>
+                          <div class="tcard-top">
+                            <span class="prio-badge" :class="'prio-' + (task.priority || 'media')" x-text="task.priority || 'media'"></span>
+                          </div>
                           <div class="tt" x-text="task.title" @dblclick="startEdit(task)" title="Doble clic para editar"></div>
                           <div class="desc" x-show="task.description" x-text="task.description"></div>
+                          <div class="tcard-check" x-show="(task.checklist || []).length">
+                            <div class="tcard-check-label">
+                              <span>Subtareas</span>
+                              <span x-text="(task.checklist || []).filter(c => c.done).length + '/' + (task.checklist || []).length"></span>
+                            </div>
+                            <div class="tcard-check-bar"><div class="tcard-check-fill" :style="{ width: checklistPct(task) + '%' }"></div></div>
+                          </div>
                           <div class="foot">
                             <span class="meta" x-show="task.responsible_contact_id">
                               <span class="avatar" :style="{ background: task.responsible_color || '#9aa1ad' }" x-text="(task.responsible_name || '?').split(' ').slice(0,2).map(w => w[0]).join('').toUpperCase()"></span>
@@ -568,41 +625,40 @@ export function renderApp(token, { inbox, view, boardsData, contacts, boardTempl
           </div>
         </template>
       </div>
-      <aside class="inbox" id="inbox">
-        <h3>${I.inbox}<span>Bandeja</span><span class="ib-badge" data-ibbadge${unread ? "" : " hidden"}>${unread || ""}</span></h3>
-        <div data-ibrows>${rows || emptyInbox}</div>
-      </aside>
-    </div>`;
-
-  const viewChat = `
-    <div class="chat-wrap" x-data="tfChat()">
-      <div class="chat-scroll" x-ref="scroll">
-        <template x-if="!messages.length"><div class="col-empty" style="width:auto">Cargando conversación…</div></template>
-        <template x-for="m in messages" :key="m.id">
-          <div class="bubble-row" :class="{me: m.kind === 'reply'}">
-            <div class="bubble" :class="{them: m.kind !== 'reply', me: m.kind === 'reply', attack: m.is_attack}">
-              <div class="sender" x-show="m.kind !== 'reply' && m.sender_name" x-text="m.sender_name"></div>
-              <template x-if="m.kind === 'attack'">
-                <div>
-                  <div class="attack-subject" x-text="m.attack_subject"></div>
-                  <a class="btn tiny" :href="'/t/${t}/d/' + m.delivery_id" x-text="m.attack_cta || 'Abrir'"></a>
+      <aside class="inbox tf-side" id="inbox" x-data="{ tab: 'bandeja' }" x-on:tf-panel.window="tab = $event.detail.tab">
+        <div class="side-tabs">
+          <button type="button" class="side-tab" :class="{active: tab === 'bandeja'}" @click="tab = 'bandeja'">
+            ${I.inbox}<span>Bandeja</span><span class="ib-badge" data-ibbadge${unread ? "" : " hidden"}>${unread || ""}</span>
+          </button>
+          <button type="button" class="side-tab" :class="{active: tab === 'chat'}" @click="tab = 'chat'">
+            ${I.chat}<span>Chat</span>
+          </button>
+        </div>
+        <div x-show="tab === 'bandeja'" class="side-scroll" data-ibrows>${rows || emptyInbox}</div>
+        <div x-show="tab === 'chat'" class="side-chat" x-data="tfChat()">
+          <div class="chat-scroll side-scroll" x-ref="scroll">
+            <template x-if="!messages.length"><div class="col-empty" style="width:auto">Cargando conversación…</div></template>
+            <template x-for="m in messages" :key="m.id">
+              <div class="bubble-row" :class="{me: m.kind === 'reply'}">
+                <div class="bubble" :class="{them: m.kind !== 'reply', me: m.kind === 'reply', attack: m.is_attack}">
+                  <div class="sender" x-show="m.kind !== 'reply' && m.sender_name" x-text="m.sender_name"></div>
+                  <template x-if="m.kind === 'attack'">
+                    <div>
+                      <div class="attack-subject" x-text="m.attack_subject"></div>
+                      <a class="btn tiny" :href="'/t/${t}/d/' + m.delivery_id" x-text="m.attack_cta || 'Abrir'"></a>
+                    </div>
+                  </template>
+                  <template x-if="m.kind !== 'attack'"><span x-text="m.body"></span></template>
                 </div>
-              </template>
-              <template x-if="m.kind !== 'attack'"><span x-text="m.body"></span></template>
-            </div>
+              </div>
+            </template>
           </div>
-        </template>
-      </div>
-      <form class="chat-input" @submit.prevent="send()">
-        <textarea x-model="draft" rows="1" placeholder="Escribe un mensaje al equipo…" @keydown.enter.prevent="send()"></textarea>
-        <button class="btn" type="submit">${I.send}</button>
-      </form>
-    </div>`;
-
-  const viewBandeja = `
-    <div class="inbox-full">
-      <h3>Bandeja de entrada</h3>
-      <div data-ibrows>${rows || emptyInbox}</div>
+          <form class="chat-input" @submit.prevent="send()">
+            <textarea x-model="draft" rows="1" placeholder="Escribe un mensaje al equipo…" @keydown.enter.prevent="send()"></textarea>
+            <button class="btn" type="submit">${I.send}</button>
+          </form>
+        </div>
+      </aside>
     </div>`;
 
   const viewAgenda = `
@@ -634,8 +690,6 @@ export function renderApp(token, { inbox, view, boardsData, contacts, boardTempl
     <div class="content">
       ${panel("inicio", viewInicio)}
       ${panel("tablero", viewTablero)}
-      ${panel("bandeja", viewBandeja)}
-      ${panel("chat", viewChat)}
       ${panel("agenda", viewAgenda)}
       ${panel("equipo", viewEquipo)}
     </div>
@@ -663,7 +717,7 @@ function tfBoards(){
     boards: TF_BOARDS, contacts: TF_CONTACTS, boardTemplates: TF_BOARD_TEMPLATES,
     activeBoard: TF_BOARDS.length ? TF_BOARDS[0].id : null,
     dragId: null, dragFrom: null, overCol: null,
-    editId: null, editTitle: '', editDesc: '', editResp: '',
+    editId: null, editTitle: '', editDesc: '', editResp: '', editPriority: 'media', editChecklist: [], editChecklistNew: '',
     addCol: null, addTitle: '', addDesc: '', addResp: '',
     newBoardOpen: false, newBoardName: '', newBoardTemplate: '',
     get board(){ var self=this; return this.boards.find(function(b){ return b.id===self.activeBoard; }) || null; },
@@ -701,13 +755,34 @@ function tfBoards(){
           self.addCol=null; self.addTitle=''; self.addDesc=''; self.addResp=''; self.sync();
         });
     },
-    startEdit(task){ this.addCol=null; this.editId=task.id; this.editTitle=task.title; this.editDesc=task.description||''; this.editResp=task.responsible_contact_id||''; this.$nextTick(function(){ this.$refs.edit && this.$refs.edit.focus(); }.bind(this)); },
+    startEdit(task){
+      this.addCol=null; this.editId=task.id; this.editTitle=task.title; this.editDesc=task.description||''; this.editResp=task.responsible_contact_id||'';
+      this.editPriority=task.priority||'media';
+      this.editChecklist=(task.checklist||[]).map(function(item){ return { title: item.title, done: !!item.done }; });
+      this.editChecklistNew='';
+      this.$nextTick(function(){ this.$refs.edit && this.$refs.edit.focus(); }.bind(this));
+    },
+    addEditChecklistItem(){
+      var title=(this.editChecklistNew||'').trim(); if(!title) return;
+      this.editChecklist.push({ title: title, done: false });
+      this.editChecklistNew='';
+    },
+    checklistPct(task){
+      var list=task.checklist||[]; if(!list.length) return 0;
+      return Math.round(list.filter(function(c){ return c.done; }).length / list.length * 100);
+    },
     saveEdit(task){
       var self=this, boardId=this.activeBoard;
-      tfApi('/boards/'+boardId+'/tasks/'+task.id, { method:'PATCH', body: JSON.stringify({ title: this.editTitle, description: this.editDesc, responsible_contact_id: this.editResp||null }) })
-        .then(function(data){
+      tfApi('/boards/'+boardId+'/tasks/'+task.id, {
+        method:'PATCH',
+        body: JSON.stringify({
+          title: this.editTitle, description: this.editDesc, responsible_contact_id: this.editResp||null,
+          priority: this.editPriority, checklist: this.editChecklist,
+        }),
+      }).then(function(data){
           if(data.task){
             task.title=data.task.title; task.description=data.task.description; task.responsible_contact_id=data.task.responsible_contact_id;
+            task.priority=data.task.priority; task.checklist=data.task.checklist;
             var c=self.contacts.find(function(x){ return x.id===task.responsible_contact_id; });
             task.responsible_name = c ? c.display_name : null; task.responsible_color = c ? c.avatar_color : null;
           }
@@ -790,7 +865,14 @@ function tfChat(){
     if(mainEl) mainEl.scrollTop=0;
   }
   navs.forEach(function(n){ n.addEventListener('click', function(){ show(n.getAttribute('data-view'), true); tfPing(); }); });
-  document.querySelectorAll('[data-goto]').forEach(function(b){ b.addEventListener('click', function(){ show(b.getAttribute('data-goto'), true); tfPing(); }); });
+  document.querySelectorAll('[data-goto]').forEach(function(b){ b.addEventListener('click', function(){
+    show(b.getAttribute('data-goto'), true);
+    // data-panel abre una pestaña concreta del panel lateral de "Mis
+    // tableros" (Bandeja/Chat) -- ver la nota junto a VIEWS más arriba.
+    var panelTab = b.getAttribute('data-panel');
+    if (panelTab) window.dispatchEvent(new CustomEvent('tf-panel', { detail: { tab: panelTab } }));
+    tfPing();
+  }); });
   window.addEventListener('popstate', function(e){
     var v=(e.state && e.state.v) || new URLSearchParams(location.search).get('v') || ${JSON.stringify(DEFAULT_VIEW)};
     show(v, false);
@@ -868,6 +950,29 @@ ${behaviorCaptureTag(token, "app")}`, {
 .tcard-edit textarea:focus,.tcard-add textarea:focus{outline:2px solid var(--brand-tint);border-color:var(--brand)}
 .tcard.tcard-add{box-shadow:none;border-style:dashed;cursor:default}
 .tcard-actions{display:flex;gap:.4rem;margin-top:.5rem}
+
+/* ---------- prioridad y checklist de tarjeta (migración 013) ---------- */
+.tcard-top{display:flex;gap:.35rem;flex-wrap:wrap;margin-bottom:.4rem}
+.prio-badge{font-size:.62rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:.1rem .45rem;border:1.5px solid;border-radius:20px}
+.prio-badge.prio-alta,.prio-pick.prio-alta.active{color:var(--warn);border-color:var(--warn)}
+.prio-badge.prio-media,.prio-pick.prio-media.active{color:var(--brand-strong);border-color:var(--brand)}
+.prio-badge.prio-baja,.prio-pick.prio-baja.active{color:var(--muted);border-color:var(--line)}
+.prio-pick.prio-alta.active{background:#fdeaea}
+.prio-pick.prio-media.active{background:var(--brand-tint)}
+.prio-pick.prio-baja.active{background:var(--line-soft)}
+.tcard-check{margin-top:.55rem}
+.tcard-check-label{display:flex;justify-content:space-between;font-size:.7rem;color:var(--muted);margin-bottom:.2rem}
+.tcard-check-bar{height:4px;background:var(--line-soft);border-radius:3px;overflow:hidden}
+.tcard-check-fill{height:100%;background:var(--ink-2);transition:width .25s}
+.prio-pick-row{display:flex;gap:.35rem;margin-top:.5rem}
+.prio-pick{flex:1;font-size:.68rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:.3rem .3rem;border:1.5px solid var(--line);border-radius:6px;background:#fff;color:var(--muted);cursor:pointer}
+.edit-checklist-label{font-size:.72rem;font-weight:650;color:var(--muted);margin-top:.6rem;margin-bottom:.2rem}
+.edit-checklist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:.1rem}
+.edit-checklist li{display:flex;align-items:center;justify-content:space-between;gap:.4rem;padding:.15rem 0}
+.edit-checklist label{display:flex;align-items:center;gap:.4rem;font-size:.82rem;min-width:0}
+.edit-checklist label span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.edit-checklist-add{display:flex;gap:.4rem;margin-top:.35rem}
+.edit-checklist-add input{flex:1;min-width:0;padding:.35rem .5rem;border:1px solid var(--line);border-radius:7px;font-size:.82rem}
 .btn.tiny{padding:.32rem .65rem;font-size:.78rem;border-radius:7px}
 .home-view{max-width:640px}
 .home-cards{display:flex;gap:1rem;flex-wrap:wrap;margin:1.1rem 0 1.4rem}
@@ -919,12 +1024,12 @@ export function renderMessage(token, msg) {
 
   return shell(msg.subject, `
 <div class="app">
-  ${rail("bandeja", token, false)}
+  ${rail("tablero", token, false)}
   <div class="main">
     <div class="topbar"><h1>Bandeja</h1><span class="crumb">/ ${escapeHtml(msg.kind === "task" ? "Tarea" : "Mensaje")}</span></div>
     <div class="content">
       <div class="reader">
-        <a class="back" href="/t/${t}/app?v=bandeja">${I.back} Volver a la bandeja</a>
+        <a class="back" href="/t/${t}/app?v=tablero">${I.back} Volver a la bandeja</a>
         <div class="card">
           <div class="hd">
             <div class="kind">${msg.kind === "task" ? "Tarea asignada" : "Mensaje recibido"}</div>

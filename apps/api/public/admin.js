@@ -5,6 +5,7 @@ let KEY = sessionStorage.getItem("paws_admin_key") || "";
 if (KEY) $("#apiKey").value = KEY;
 
 const VEC_LABEL = { autoridad: "autoridad", urgencia: "urgencia", escasez: "escasez", prueba_social: "prueba social", curiosidad: "curiosidad" };
+const KIND_LABEL = { email: "correo", task: "tarea", chat: "chat directo" };
 const badge = (v, atk) => atk === false
   ? `<span class="badge benigno">relleno</span>`
   : `<span class="badge ${v}">${VEC_LABEL[v] || v}</span>`;
@@ -295,11 +296,11 @@ async function loadTemplates() {
   const ben = templates.filter((t) => !t.is_attack);
   $("#tplAtkTable tbody").innerHTML = atk.map((t) => `<tr>
     <td>${esc(t.name)}</td><td>${badge(t.vector, true)}</td>
-    <td>${t.kind === "task" ? "tarea" : "correo"}</td><td>${esc(t.landing_kind)}</td>
+    <td>${esc(KIND_LABEL[t.kind] || t.kind)}</td><td>${esc(t.landing_kind)}</td>
     <td><button class="btn-xs" data-edit="${t.id}">editar</button> <button class="btn-xs ghost" data-del="${t.id}">borrar</button></td>
   </tr>`).join("") || `<tr><td colspan="5" class="hint">Sin plantillas de ataque. Pulsa "Crear biblioteca estándar".</td></tr>`;
   $("#tplBenTable tbody").innerHTML = ben.map((t) => `<tr>
-    <td>${esc(t.name)}</td><td>${t.kind === "task" ? "tarea" : "correo"}</td><td>${esc(t.sender_label || "—")}</td>
+    <td>${esc(t.name)}</td><td>${esc(KIND_LABEL[t.kind] || t.kind)}</td><td>${esc(t.sender_label || "—")}</td>
     <td><button class="btn-xs" data-edit="${t.id}">editar</button> <button class="btn-xs ghost" data-del="${t.id}">borrar</button></td>
   </tr>`).join("") || `<tr><td colspan="4" class="hint">Sin plantillas de relleno.</td></tr>`;
   $$("#tab-tpl [data-edit]").forEach((b) => b.onclick = () => editTemplate(b.dataset.edit));
@@ -365,8 +366,14 @@ $("#tplForm").addEventListener("submit", async (e) => {
 /* ================= 4 · MENSAJES ================= */
 let CURRENT_MSG = null;
 function fillMsgTemplateSelect() {
+  // Las plantillas "chat directo" (kind === "chat") no se ofrecen acá: este
+  // formulario envía a la BANDEJA/tareas del participante, no al chat -- una
+  // plantilla de chat solo se inserta como ataque dentro de un guion de chat
+  // (paso 6, "Guiones de chat"). Mostrarla aquí llevaría a un mensaje con un
+  // "Formato" que este <select> ni siquiera ofrece (ver admin.html).
   $("#msgTpl").innerHTML = '<option value="">— redactar desde cero —</option>' +
-    TEMPLATES.map((t) => `<option value="${t.id}">${t.is_attack ? "[ataque " + (VEC_LABEL[t.vector] || t.vector) + "] " : "[relleno] "}${esc(t.name)}</option>`).join("");
+    TEMPLATES.filter((t) => t.kind !== "chat")
+      .map((t) => `<option value="${t.id}">${t.is_attack ? "[ataque " + (VEC_LABEL[t.vector] || t.vector) + "] " : "[relleno] "}${esc(t.name)}</option>`).join("");
 }
 function toggleMsgAttack() { $$("#msgForm .msgatk").forEach((e) => (e.style.display = $("#msgIsAttack").value === "true" ? "" : "none")); }
 $("#msgIsAttack").addEventListener("change", toggleMsgAttack);
@@ -599,6 +606,27 @@ async function loadInteraction() {
   fillBranchTemplateSelects();
   await loadBranches();
   loadCreds();
+  loadChannelCounts();
+}
+
+/* -------- ataques por canal (correo/tarea/chat directo) -------- */
+const CHANNEL_ORDER = ["email", "task", "chat"];
+async function loadChannelCounts() {
+  const tbody = $("#channelCountTable tbody");
+  try {
+    const { por_canal } = await api("GET", "/api/dashboard/overview");
+    const rows = [...(por_canal || [])].sort(
+      (a, b) => CHANNEL_ORDER.indexOf(a.clave) - CHANNEL_ORDER.indexOf(b.clave)
+    );
+    tbody.innerHTML = rows.length
+      ? rows.map((r) => `<tr>
+          <td>${esc(KIND_LABEL[r.clave] || r.clave)}</td>
+          <td>${r.expuestos}</td><td>${r.abrieron}</td><td>${r.hicieron_clic}</td>
+          <td>${r.cayeron}</td><td>${r.reportaron}</td>
+          <td>${r.conversion_pct != null ? r.conversion_pct + "%" : "—"}</td>
+        </tr>`).join("")
+      : `<tr><td colspan="7" class="hint">Todavía no hay ataques enviados por ningún canal.</td></tr>`;
+  } catch (e) { tbody.innerHTML = `<tr><td colspan="7" class="hint">Error: ${esc(e.message)}</td></tr>`; }
 }
 
 /* -------- compañeros ficticios -------- */
@@ -715,7 +743,7 @@ function renderChatScriptSteps() {
         ? `<input data-path="step:${si}:body" value="${esc(s.body || "")}" placeholder="Qué dice (ej. ¿Ya viste el correo de soporte?)" style="flex:1;min-width:220px">`
         : `<select data-path="step:${si}:template_id">
              <option value="">— elige plantilla de ataque —</option>
-             ${TEMPLATES.filter((t) => t.is_attack).map((t) => `<option value="${t.id}" ${s.template_id === t.id ? "selected" : ""}>${esc(t.name)}</option>`).join("")}
+             ${TEMPLATES.filter((t) => t.is_attack).map((t) => `<option value="${t.id}" ${s.template_id === t.id ? "selected" : ""}>[${esc(KIND_LABEL[t.kind] || t.kind)}] ${esc(t.name)}</option>`).join("")}
            </select>`}
       <button type="button" class="btn-xs ghost" data-move="${si}:-1" ${si === 0 ? "disabled" : ""}>↑</button>
       <button type="button" class="btn-xs ghost" data-move="${si}:1" ${si === chatScriptSteps.length - 1 ? "disabled" : ""}>↓</button>

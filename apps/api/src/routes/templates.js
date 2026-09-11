@@ -7,7 +7,15 @@ export const templatesRouter = Router();
 const VECTORS = ["autoridad", "urgencia", "escasez", "prueba_social", "curiosidad"];
 const CHANNELS = ["email_simulado", "sms_simulado", "web"];
 const LANDINGS = ["form", "permiso"];
-const KINDS = ["email", "task"];
+// 'chat' (migración 010): una plantilla marcada así es de uso exclusivo
+// dentro de un guion de chat (paso 6, "Insertar ataque") -- ver
+// interaction.js validateChatScript y lib/chat.js. No es una restricción de
+// la base (el ENUM message_kind ya la soporta desde la migración 010); antes
+// de este cambio solo faltaba que el admin pudiera GUARDAR una plantilla con
+// este kind -- el motor de chat ya podía insertar cualquier plantilla de
+// ataque (email/task/chat) en un guion, y sigue pudiendo, para no romper
+// guiones ya armados con plantillas de correo/tarea.
+const KINDS = ["email", "task", "chat"];
 
 function validate(b) {
   if (!b?.name || !b?.subject_or_headline) return "Campos requeridos: name, subject_or_headline";

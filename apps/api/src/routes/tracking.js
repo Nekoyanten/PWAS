@@ -435,7 +435,7 @@ trackingRouter.post("/:token/boards/:boardId/tasks", async (req, res) => {
   const pc = await loadPC(req.params.token);
   if (!pc || !pc.consent_given) return res.status(404).json({ error: "Enlace no válido." });
   if (!(await boards.assertBoardOwnership(req.params.boardId, pc.id))) return res.status(404).json({ error: "Tablero no encontrado" });
-  const { column_id, title, description, responsible_contact_id } = req.body ?? {};
+  const { column_id, title, description, responsible_contact_id, priority, checklist } = req.body ?? {};
   const titleTrim = typeof title === "string" ? title.trim().slice(0, 200) : "";
   if (!column_id || !titleTrim) return res.status(400).json({ error: "Campos requeridos: column_id, title" });
   if (!(await boards.assertColumnInBoard(column_id, req.params.boardId))) return res.status(400).json({ error: "La columna no pertenece a este tablero" });
@@ -443,6 +443,8 @@ trackingRouter.post("/:token/boards/:boardId/tasks", async (req, res) => {
     title: titleTrim,
     description: typeof description === "string" ? description.slice(0, 2000) : null,
     responsible_contact_id: responsible_contact_id || null,
+    priority,
+    checklist,
   });
   res.status(201).json({ task });
 });
@@ -452,17 +454,24 @@ trackingRouter.patch("/:token/boards/:boardId/tasks/:taskId", async (req, res) =
   if (!pc || !pc.consent_given) return res.status(404).json({ error: "Enlace no válido." });
   if (!(await boards.assertBoardOwnership(req.params.boardId, pc.id))) return res.status(404).json({ error: "Tablero no encontrado" });
   if ((await boards.taskBoardId(req.params.taskId)) !== req.params.boardId) return res.status(404).json({ error: "Tarea no encontrada en este tablero" });
-  const { column_id, title, description, responsible_contact_id, position } = req.body ?? {};
+  const { column_id, title, description, responsible_contact_id, position, priority, checklist } = req.body ?? {};
   if (column_id && !(await boards.assertColumnInBoard(column_id, req.params.boardId))) {
     return res.status(400).json({ error: "La columna destino no pertenece a este tablero" });
   }
-  const task = await boards.updateTask(req.params.taskId, {
+  // priority/checklist solo se incluyen en el objeto si el participante los
+  // mandó -- boards.updateTask distingue "no venía" de "media"/"[]" con
+  // fields.priority !== undefined, así que agregar la clave con `null` acá
+  // rompería esa distinción.
+  const patch = {
     title: typeof title === "string" ? title.trim().slice(0, 200) : null,
     description: typeof description === "string" ? description.slice(0, 2000) : null,
     responsible_contact_id: responsible_contact_id ?? null,
     column_id: column_id ?? null,
     position: Number.isInteger(position) ? position : null,
-  });
+  };
+  if (priority !== undefined) patch.priority = priority;
+  if (checklist !== undefined) patch.checklist = checklist;
+  const task = await boards.updateTask(req.params.taskId, patch);
   if (!task) return res.status(404).json({ error: "Tarea no encontrada" });
   res.json({ task });
 });

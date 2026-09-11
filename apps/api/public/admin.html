@@ -163,7 +163,8 @@ p04,directivo,Equipo 2"></textarea>
             </select>
           </label>
           <label>Formato
-            <select name="kind"><option value="email">Correo</option><option value="task">Tarea asignada</option></select>
+            <select name="kind"><option value="email">Correo</option><option value="task">Tarea asignada</option><option value="chat">Chat directo</option></select>
+            <span class="help">"Chat directo" es solo para insertarla como ataque dentro de un guion de chat (paso 6) — no aparece para enviar por bandeja en el paso 4.</span>
           </label>
           <label id="vectorRow">Técnica
             <select name="vector">
@@ -330,6 +331,15 @@ p04,directivo,Equipo 2"></textarea>
           <button type="button" id="chatScriptSave" class="btn-sm">Guardar guion de chat</button>
           <span id="chatScriptMsg" class="hint"></span>
         </div>
+      </div>
+
+      <div class="panel">
+        <h2>Ataques por canal <span class="badge atk">conteo agregado</span></h2>
+        <p class="hint">Cuántos ataques se expusieron, abrieron, hicieron caer o fueron reportados, agrupados por cómo llegaron: correo (bandeja), tarea asignada o <strong>chat directo</strong> (insertado en un guion de chat, panel de arriba). Cuenta ataques de <u>todas</u> las campañas, igual que el resto del paso 5 · Resultados — no solo la campaña activa.</p>
+        <table id="channelCountTable">
+          <thead><tr><th>Canal</th><th>Expuestos</th><th>Abrieron</th><th>Clic</th><th>Cayeron</th><th>Reportaron</th><th>% caída</th></tr></thead>
+          <tbody></tbody>
+        </table>
       </div>
 
       <div class="panel">

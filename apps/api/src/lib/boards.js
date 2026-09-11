@@ -8,6 +8,17 @@ import { query, withTransaction } from "../db.js";
 
 const DEFAULT_COLUMNS = ["Por hacer", "En curso", "Hecho"];
 
+// Prioridad y checklist (migración 013): validación mínima acá además del
+// CHECK/tipo en la base -- así un valor raro nunca llega ni a intentar el
+// INSERT/UPDATE, y el error es más claro que un 23514 genérico de Postgres.
+const VALID_PRIORITIES = new Set(["alta", "media", "baja"]);
+function sanitizeChecklist(checklist) {
+  if (!Array.isArray(checklist)) return [];
+  return checklist
+    .filter((item) => item && typeof item.title === "string" && item.title.trim())
+    .map((item) => ({ title: item.title.trim().slice(0, 300), done: item.done === true }));
+}
+
 export async function loadBoards(participantCampaignId) {
   const boards = await query(
     `SELECT * FROM boards WHERE participant_campaign_id = $1 ORDER BY created_at`,
@@ -21,6 +32,8 @@ export async function loadBoards(participantCampaignId) {
     [boardIds]
   );
   const columnIds = columns.rows.map((c) => c.id);
+  // t.* ya trae priority y checklist (migración 013) -- no hace falta
+  // listarlas a mano, solo la columna calculada (responsible_name/_color).
   const tasks = columnIds.length
     ? await query(
         `SELECT t.*, fc.display_name AS responsible_name, fc.avatar_color AS responsible_color
@@ -71,9 +84,14 @@ export async function createBoard(participantCampaignId, { name, templateId }) {
       let taskPos = 0;
       for (const t of col.tasks || []) {
         await client.query(
-          `INSERT INTO board_tasks (column_id, title, description, responsible_contact_id, position)
-           VALUES ($1, $2, $3, $4, $5)`,
-          [c.rows[0].id, t.title, t.description ?? null, t.responsible_contact_id ?? null, taskPos++]
+          `INSERT INTO board_tasks (column_id, title, description, responsible_contact_id, priority, checklist, position)
+           VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7)`,
+          [
+            c.rows[0].id, t.title, t.description ?? null, t.responsible_contact_id ?? null,
+            VALID_PRIORITIES.has(t.priority) ? t.priority : "media",
+            JSON.stringify(sanitizeChecklist(t.checklist)),
+            taskPos++,
+          ]
         );
       }
     }
@@ -88,17 +106,28 @@ export async function assertBoardOwnership(boardId, participantCampaignId) {
   return r.rows.length > 0;
 }
 
-export async function createTask(columnId, { title, description, responsible_contact_id }) {
+export async function createTask(columnId, { title, description, responsible_contact_id, priority, checklist }) {
   const posRow = await query(`SELECT COALESCE(MAX(position), -1) + 1 AS next FROM board_tasks WHERE column_id = $1`, [columnId]);
   const r = await query(
-    `INSERT INTO board_tasks (column_id, title, description, responsible_contact_id, position)
-     VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-    [columnId, title, description ?? null, responsible_contact_id ?? null, posRow.rows[0].next]
+    `INSERT INTO board_tasks (column_id, title, description, responsible_contact_id, priority, checklist, position)
+     VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7) RETURNING *`,
+    [
+      columnId, title, description ?? null, responsible_contact_id ?? null,
+      VALID_PRIORITIES.has(priority) ? priority : "media",
+      JSON.stringify(sanitizeChecklist(checklist)),
+      posRow.rows[0].next,
+    ]
   );
   return r.rows[0];
 }
 
 export async function updateTask(taskId, fields) {
+  // priority/checklist no siguen el patrón COALESCE($n, columna) de los
+  // demás campos: "media" y "[]" son valores válidos y con intención propia
+  // (no "no lo toques"), así que se distingue con un booleano explícito si
+  // el caller los mandó, en vez de con `?? null` como el resto de abajo.
+  const hasPriority = fields.priority !== undefined;
+  const hasChecklist = fields.checklist !== undefined;
   const r = await query(
     `UPDATE board_tasks SET
        title = COALESCE($1, title),
@@ -106,9 +135,17 @@ export async function updateTask(taskId, fields) {
        responsible_contact_id = COALESCE($3, responsible_contact_id),
        column_id = COALESCE($4, column_id),
        position = COALESCE($5, position),
+       priority = CASE WHEN $6 THEN $7 ELSE priority END,
+       checklist = CASE WHEN $8 THEN $9::jsonb ELSE checklist END,
        updated_at = now()
-     WHERE id = $6 RETURNING *`,
-    [fields.title ?? null, fields.description ?? null, fields.responsible_contact_id ?? null, fields.column_id ?? null, fields.position ?? null, taskId]
+     WHERE id = $10 RETURNING *`,
+    [
+      fields.title ?? null, fields.description ?? null, fields.responsible_contact_id ?? null,
+      fields.column_id ?? null, fields.position ?? null,
+      hasPriority, hasPriority && VALID_PRIORITIES.has(fields.priority) ? fields.priority : "media",
+      hasChecklist, JSON.stringify(hasChecklist ? sanitizeChecklist(fields.checklist) : []),
+      taskId,
+    ]
   );
   return r.rows[0] ?? null;
 }

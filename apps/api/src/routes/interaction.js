@@ -47,6 +47,11 @@ interactionRouter.delete("/contacts/:id", requireAdmin, async (req, res) => {
 
 // ---------------------------------------------------------------------------
 // Plantillas de tablero (semilla de columnas + tareas a clonar).
+// priority/checklist (migración 013) son opcionales en la semilla -- si
+// faltan, boards.createBoard ya les pone "media"/"[]" por defecto al
+// clonar -- pero si vienen, se valida su forma acá para no guardar una
+// plantilla que después falle (o se sanee en silencio) al instanciarse.
+const VALID_SEED_PRIORITIES = new Set(["alta", "media", "baja"]);
 function validateBoardSeed(seed) {
   if (!Array.isArray(seed)) return "seed debe ser un arreglo de columnas";
   for (const col of seed) {
@@ -54,6 +59,15 @@ function validateBoardSeed(seed) {
     if (col.tasks !== undefined && !Array.isArray(col.tasks)) return "'tasks' debe ser un arreglo";
     for (const t of col.tasks ?? []) {
       if (!t || typeof t.title !== "string" || !t.title.trim()) return "cada tarea necesita 'title'";
+      if (t.priority !== undefined && !VALID_SEED_PRIORITIES.has(t.priority)) {
+        return "la prioridad de una tarea debe ser 'alta', 'media' o 'baja'";
+      }
+      if (t.checklist !== undefined) {
+        if (!Array.isArray(t.checklist)) return "el checklist de una tarea debe ser un arreglo";
+        for (const item of t.checklist) {
+          if (!item || typeof item.title !== "string" || !item.title.trim()) return "cada ítem del checklist necesita 'title'";
+        }
+      }
     }
   }
   return null;
