@@ -12,13 +12,23 @@
 --   3. El evento 'permiso_concedido' registra SOLO que el participante pulsó
 --      "Autorizar" en una pantalla de autorización SIMULADA (estilo OAuth) y
 --      qué alcance se pedía (etiqueta: 'perfil' | 'tareas' | 'agenda' | ...).
---      NO se solicita ni se accede a ningún recurso real: no hay cámara,
---      micrófono, ubicación, contactos ni nada del dispositivo.
+--      Esa pantalla en particular NO solicita ni accede a ningún recurso real:
+--      no hay cámara, micrófono, ubicación, contactos ni nada del dispositivo
+--      detrás de ella.
 --   4. `fall_reason` es autoinformado por el participante en el debriefing
 --      (TG §9.5 Paso 6), no inferido automáticamente.
 --   5. La telemetría de usabilidad (participant_campaign.usability_interactions)
 --      es un simple CONTADOR de interacciones benignas con el tablero. No
 --      registra el contenido de las tarjetas ni texto del participante.
+--   6. EXCEPCIÓN EXPLÍCITA a los puntos 1-5 (extensión fuera del alcance
+--      original — ver docs/2026-09-12_captura-facial-biometrica.md): cuando
+--      `participants.camera_consent_given = TRUE` (consentimiento separado
+--      del consentimiento general, nunca asumido a partir de él), este
+--      sistema SÍ activa la cámara del participante para derivar 5 señales
+--      faciales agregadas (apertura ocular, parpadeo, mirada, tensión de
+--      ceja/boca — ver migración 015, `facial_sessions`/`facial_events`).
+--      El procesamiento ocurre 100% en el navegador (MediaPipe/WebAssembly);
+--      nunca se guarda ni se envía video, imágenes ni landmarks faciales.
 -- ============================================================================
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;

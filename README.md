@@ -32,9 +32,20 @@ Detalle del flujo, endpoints y garantías de privacidad en
 
 ## Privacidad (no negociable)
 
-No se almacena nombre, correo, documento ni IP. No se captura cámara,
-micrófono ni ubicación (el diálogo de permiso es **simulado**). El contenido
-de los formularios se **descarta** antes de tocar la base de datos. A los
-participantes se les informa de una "prueba de usabilidad"; la simulación de
-ataque se revela en el **debriefing** al final. Ver la nota de cumplimiento
-en [`db/schema.sql`](db/schema.sql).
+No se almacena nombre, correo, documento ni IP. El "permiso" que pide la
+página señuelo durante el ataque simulado (estilo OAuth: "perfil", "tareas",
+"agenda"...) es **simulado** y no accede a ningún recurso real del
+dispositivo — no hay cámara, micrófono ni ubicación detrás de esa pantalla.
+El contenido de los formularios se **descarta** antes de tocar la base de
+datos. A los participantes se les informa de una "prueba de usabilidad"; la
+simulación de ataque se revela en el **debriefing** al final.
+
+Aparte de eso, y como extensión explícita fuera del alcance original,
+el sistema sí puede activar la cámara real del participante para medir 5
+señales faciales agregadas (parpadeo, apertura ocular, mirada, tensión
+facial) — solo cuando el participante marcó por separado un consentimiento
+de cámara dedicado (`camera_consent_given`), nunca asumido del consentimiento
+general. El procesamiento es 100% local en el navegador: nunca se guarda ni
+se envía video, imágenes ni landmarks faciales. Ver
+[`docs/2026-09-12_captura-facial-biometrica.md`](docs/2026-09-12_captura-facial-biometrica.md)
+y la nota de cumplimiento en [`db/schema.sql`](db/schema.sql).

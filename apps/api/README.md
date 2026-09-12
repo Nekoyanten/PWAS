@@ -25,9 +25,10 @@ Se registra **solo comportamiento**, de forma seudonimizada:
 | Se guarda | No se guarda |
 |---|---|
 | Eventos: `entregado`, `abierto`, `clic`, `intento_envio`, `permiso_concedido`, `reportado` + timestamp | El contenido de cualquier formulario (usuario/contraseña) — se descarta antes de tocar la BD |
-| Tiempo de reacción (ms) desde la entrega | Cámara, micrófono, ubicación (el diálogo de permiso es **simulado**; solo se guarda "concedió: sí/no" y la etiqueta) |
+| Tiempo de reacción (ms) desde la entrega | El "permiso" de la página señuelo del ataque (diálogo **simulado**; solo se guarda "concedió: sí/no" y la etiqueta) — esa pantalla en particular no accede a cámara, micrófono ni ubicación reales |
 | Encuesta autoinformada (motivo de caída, sospecha previa, reconocimiento) | Nombre, correo, documento, IP |
 | Contador de interacciones benignas con el tablero | El texto de las tarjetas o cualquier cosa que el participante escriba |
+| 5 señales faciales agregadas (parpadeo, apertura ocular, mirada, tensión facial) — SOLO con `camera_consent_given = TRUE` separado, ver `docs/2026-09-12_captura-facial-biometrica.md` | Video, imágenes o landmarks faciales crudos (el modelo corre 100% en el navegador; nunca sale del dispositivo) |
 
 Ver la nota de cumplimiento completa al inicio de `db/schema.sql`.
 
