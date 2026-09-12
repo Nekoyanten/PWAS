@@ -494,6 +494,10 @@ async function loadResults() {
       { v: (f.cayeron ?? 0) + (f.recibieron ? ` (${Math.round((f.cayeron / f.recibieron) * 100)}%)` : ""), l: "Cayeron" },
       { v: f.reportaron ?? 0, l: "Lo reportaron" },
       { v: (d.percepcion?.reconocieron_pct ?? 0) + "%", l: "Reconocieron la simulación" },
+      // TG §8.2.9/§9.2/§9.6: el sub-estudio facial es un SUBCONJUNTO del N de
+      // Fase 1, nunca un universo aparte -- por eso se muestra como "X de Y",
+      // no como una cifra suelta que invite a leerla como una campaña distinta.
+      { v: `${t.total_consentimiento_camara ?? 0} de ${t.total_expuestos ?? 0}`, l: "Consintieron cámara (sub-estudio facial)" },
     ];
     $("#resCards").innerHTML = cards.map((c) => `<div class="card"><div class="value">${c.v}</div><div class="label">${c.l}</div></div>`).join("");
     // por_tecnica/por_rol ya los calculaba este mismo endpoint desde hace

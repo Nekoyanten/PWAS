@@ -14,6 +14,8 @@ Antes de escribir una sola línea de este módulo, se confrontó esa contradicci
 
 Este documento (y el código que describe) existen solo porque ambas confirmaciones se dieron explícitamente. Sin la segunda en particular, este módulo no se habría construido — activar la cámara de una persona es una sensibilidad de otro orden que registrar mouse/teclado, y no es algo que deba asumirse a partir de una aprobación de alcance distinto.
 
+**Actualización (misma fecha):** el propio documento de tesis ya no se limita a mencionar cámara/rostro solo en la revisión de literatura. Se añadió la sección **§8.2.9 "Extensión exploratoria: captura biométrica facial"** (justo después de §8.2.8 y antes de §8.3), que enmarca explícitamente este módulo como una extensión fuera del núcleo validado de Fase 1, motivada por RQ2, con consentimiento y aprobación ética propios. El capítulo IX también se actualizó — §9.1 (consentimiento de cámara separado), §9.2 (el sub-estudio facial es un subconjunto del N de Fase 1, sin hipótesis propia), §9.5 (nota de consentimiento en el Paso 1 y de ejecución en paralelo tras el Paso 7) y §9.6 (el análisis confirmatorio de H1-H3 corre sobre el N completo del piloto; el sub-estudio facial se analiza aparte, como hallazgo exploratorio que no puede debilitar esas conclusiones) — para que el texto de cumplimiento y el diseño experimental digan, en la tesis, exactamente lo que este documento y el código ya hacían.
+
 ## 2. Qué mide y cómo
 
 Usando **MediaPipe FaceLandmarker** (Google, procesamiento 100% en el navegador vía WebAssembly — ningún frame de video sale nunca del dispositivo del participante), se derivan, ~15 veces por segundo, 5 señales simples a partir de los 52 blendshapes ARKit-compatibles que produce el modelo:

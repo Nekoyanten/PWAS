@@ -268,8 +268,14 @@ dashboardRouter.get("/overview", requireAdmin, async (req, res) => {
         COUNT(DISTINCT CASE WHEN e.event_type = 'reportado' THEN pc.id END) AS total_reportes,
         COUNT(DISTINCT CASE WHEN e.event_type = 'permiso_concedido' THEN pc.id END) AS total_permisos_concedidos,
         ROUND(COUNT(DISTINCT CASE WHEN s.recognized_as_simulated THEN pc.id END)::numeric
-              / NULLIF(COUNT(DISTINCT s.participant_campaign_id),0) * 100, 1) AS tasa_reconocimiento_pct
+              / NULLIF(COUNT(DISTINCT s.participant_campaign_id),0) * 100, 1) AS tasa_reconocimiento_pct,
+        -- N del sub-estudio exploratorio de captura facial (TG §8.2.9/§9.2/§9.6):
+        -- un SUBCONJUNTO de total_expuestos (el núcleo de Fase 1, mouse/teclado),
+        -- nunca un universo aparte -- así el panel deja tan visible como el texto
+        -- de la tesis que declinar la cámara no saca a nadie del piloto central.
+        COUNT(DISTINCT CASE WHEN p.camera_consent_given THEN pc.id END) AS total_consentimiento_camara
       FROM participant_campaign pc
+      JOIN participants p ON p.id = pc.participant_id
       LEFT JOIN post_session_survey s ON s.participant_campaign_id = pc.id
       LEFT JOIN events e ON e.participant_campaign_id = pc.id
     `),

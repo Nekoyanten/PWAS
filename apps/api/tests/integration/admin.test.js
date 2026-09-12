@@ -99,7 +99,11 @@ test("/overview incluye embudo, por_tecnica, por_rol y percepcion", async () => 
   await api("POST", `/api/messages/${m.body.message.id}/send`, { team_labels: [team] });
 
   const token = (await pool.query(`SELECT access_token FROM participant_campaign pc JOIN participants p ON p.id = pc.participant_id WHERE p.external_hash = $1`, [`ov_${stamp}`])).rows[0].access_token;
-  await form(`/t/${token}/consent`, "consent=1");
+  // TG §9.1: el consentimiento de cámara del sub-estudio facial es una
+  // casilla separada del consentimiento general -- se marca aquí también
+  // para poder verificar que /overview la cuenta como subconjunto, no como
+  // un total aparte (§9.2/§9.6).
+  await form(`/t/${token}/consent`, "consent=1&camera_consent=1");
   await completeCalibration(token);
   const did = (await (await hop(`/t/${token}/app`)).text()).match(/\/d\/([0-9a-f-]{36})/)[1];
   await hop(`/t/${token}/d/${did}/go`);
@@ -116,4 +120,10 @@ test("/overview incluye embudo, por_tecnica, por_rol y percepcion", async () => 
   assert.ok(esc && Number(esc.cayeron) >= 1);
   assert.ok(ov.body.por_rol.some((r) => r.clave === "directivo"));
   assert.doesNotMatch(JSON.stringify(ov.body), /ov_[0-9]{10,}/, "overview no expone external_hash");
+  // TG §9.2/§9.6: total_consentimiento_camara es un SUBCONJUNTO de
+  // total_expuestos (el núcleo de Fase 1), nunca mayor que él -- así el
+  // panel no puede, por construcción, sugerir un universo aparte para el
+  // sub-estudio facial.
+  assert.ok(Number(ov.body.totales.total_consentimiento_camara) >= 1);
+  assert.ok(Number(ov.body.totales.total_consentimiento_camara) <= Number(ov.body.totales.total_expuestos));
 });
