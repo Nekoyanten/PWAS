@@ -2,6 +2,7 @@ import { Router } from "express";
 import { query } from "../db.js";
 import { requireAdmin } from "../middleware/requireAdmin.js";
 import { recomputeSessionFeatures } from "../lib/behaviorFeatures.js";
+import { recomputeFacialSessionFeatures } from "../lib/facialFeatures.js";
 
 export const dashboardRouter = Router();
 
@@ -167,6 +168,55 @@ dashboardRouter.get("/features-summary", requireAdmin, async (req, res) => {
             MAX(f.computed_at) AS ultimo_calculo
      FROM sess
      LEFT JOIN behavior_session_features f ON f.session_id = sess.id
+     GROUP BY sess.phase
+     ORDER BY sess.phase`,
+    params
+  );
+  res.json({ por_fase: result.rows });
+});
+
+// Captura biométrica facial (migración 015) -- mismos dos endpoints que la
+// captura conductual (recompute a pedido + resumen agregado por fase), por
+// las mismas razones: no hay señal de "sesión cerrada" y la línea base de
+// calibración depende del conjunto completo. Ver facialFeatures.js.
+dashboardRouter.post("/recompute-facial-features", requireAdmin, async (req, res) => {
+  try {
+    const campaignId = typeof req.body?.campaign_id === "string" ? req.body.campaign_id : undefined;
+    const result = await recomputeFacialSessionFeatures({ campaignId });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: "no se pudieron recalcular las features faciales", detail: err.message });
+  }
+});
+
+dashboardRouter.get("/facial-features-summary", requireAdmin, async (req, res) => {
+  const params = [];
+  let where = "";
+  if (req.query.campaign_id) {
+    params.push(req.query.campaign_id);
+    where = `WHERE pc.campaign_id = $${params.length}`;
+  }
+  const result = await query(
+    `WITH sess AS (
+       SELECT fs.id, fs.phase, fs.participant_campaign_id
+       FROM facial_sessions fs
+       JOIN participant_campaign pc ON pc.id = fs.participant_campaign_id
+       ${where}
+     )
+     SELECT sess.phase,
+            COUNT(*)::int AS sesiones_totales,
+            COUNT(f.session_id)::int AS con_features,
+            ROUND(AVG(f.face_detected_ratio)::numeric, 3)   AS deteccion_rostro_promedio,
+            ROUND(AVG(f.blink_rate_per_min)::numeric, 2)    AS parpadeos_por_min_promedio,
+            ROUND(AVG(f.eye_openness_mean)::numeric, 3)     AS apertura_ocular_promedio,
+            ROUND(AVG(f.gaze_dispersion_x)::numeric, 3)     AS dispersion_mirada_x_promedio,
+            ROUND(AVG(f.brow_tension_mean)::numeric, 3)     AS tension_ceja_promedio,
+            ROUND(AVG(f.mouth_tension_mean)::numeric, 3)    AS tension_boca_promedio,
+            COUNT(*) FILTER (WHERE f.baseline_z_source = 'personal')::int    AS con_linea_base_personal,
+            COUNT(*) FILTER (WHERE f.baseline_z_source = 'poblacional')::int AS con_linea_base_poblacional,
+            MAX(f.computed_at) AS ultimo_calculo
+     FROM sess
+     LEFT JOIN facial_session_features f ON f.session_id = sess.id
      GROUP BY sess.phase
      ORDER BY sess.phase`,
     params

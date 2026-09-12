@@ -286,6 +286,17 @@ p04,directivo,Equipo 2"></textarea>
         <table id="featuresTable"><thead><tr><th>Pantalla</th><th>Sesiones</th><th>Con features</th><th>AUC promedio</th><th>Velocidad promedio</th><th>Dwell promedio</th><th>Línea base personal</th><th>Línea base poblacional</th></tr></thead><tbody></tbody></table>
       </div>
       <div class="panel">
+        <h2>Captura facial biométrica <span class="badge benigno">solo con consentimiento de cámara aparte</span></h2>
+        <p class="hint">Extensión fuera del alcance original del protocolo (§8.2 Fase 1) — el equipo de investigación pidió agregarla y confirmó que el comité de ética la aprobó por separado. Solo se activa para participantes que marcaron el checkbox de cámara <em>además</em> del consentimiento general (ver la pantalla de bienvenida). Se derivan 5 señales en el propio navegador del participante con MediaPipe (parpadeo, apertura ocular, mirada, tensión de ceja/boca) — <strong>nunca se graba ni se envía video, imágenes, ni los landmarks faciales crudos</strong>. Deliberadamente no alimenta el motor de riesgo en tiempo real: es almacenamiento para análisis offline, igual que la captura conductual de arriba.</p>
+        <div class="form-actions">
+          <button id="recomputeFacialFeaturesBtn" class="btn-sm">Calcular features faciales de esta campaña</button>
+          <button id="downloadFacialEventsBtn" class="btn-sm ghost">Descargar captura facial cruda (CSV)</button>
+          <button id="downloadFacialFeaturesBtn" class="btn-sm ghost">Descargar features faciales (CSV)</button>
+          <span id="facialMsg" class="hint"></span>
+        </div>
+        <table id="facialTable"><thead><tr><th>Pantalla</th><th>Sesiones</th><th>Con features</th><th>Detección de rostro</th><th>Parpadeos/min</th><th>Tensión de ceja</th><th>Tensión de boca</th><th>Línea base personal</th></tr></thead><tbody></tbody></table>
+      </div>
+      <div class="panel">
         <h2>Motor de decisión por riesgo <span class="badge benigno">modo sombra — no gatea nada real</span></h2>
         <p class="hint">Puntaje de riesgo calculado en tiempo real para cada clic en un ataque, a partir del comportamiento de mouse/teclado (TG §8.2.5). Es puramente informativo: la columna "el aviso habría salido" compara el puntaje con el umbral de la campaña (paso 2), pero <strong>no es lo que decidió</strong> si el participante vio el aviso de verdad — esa decisión sigue dependiendo solo de la probabilidad configurada arriba.</p>
         <table id="riskTable"><thead><tr><th>Grupo</th><th>Ataques</th><th>Puntuados</th><th>Con error</th><th>Riesgo promedio</th><th>El aviso habría salido (sombra)</th><th>El aviso salió de verdad</th></tr></thead><tbody></tbody></table>

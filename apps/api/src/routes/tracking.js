@@ -25,6 +25,7 @@ async function loadPC(token) {
             pc.calibration_started_at, pc.calibration_completed_at,
             pc.practice_username, pc.practice_password,
             p.consent_given, p.group_assignment,
+            p.camera_consent_given,
             c.name AS campaign_name, c.status AS campaign_status
      FROM participant_campaign pc
      JOIN participants p ON p.id = pc.participant_id
@@ -159,6 +160,13 @@ trackingRouter.post("/:token/consent", async (req, res) => {
   if (!pc.consent_given) {
     await query(`UPDATE participants SET consent_given = TRUE, consent_timestamp = now() WHERE id = $1 AND consent_given = FALSE`, [pc.participant_id]);
   }
+  // Consentimiento de cámara: SEPARADO del de arriba (ver migración 015 y
+  // renderWelcome) -- un checkbox sin marcar simplemente no manda el campo,
+  // así que la ausencia se trata igual que "no acepto", nunca como error.
+  const cameraOk = req.body && (req.body.camera_consent === "1" || req.body.camera_consent === 1 || req.body.camera_consent === true);
+  if (cameraOk && !pc.camera_consent_given) {
+    await query(`UPDATE participants SET camera_consent_given = TRUE, camera_consent_timestamp = now() WHERE id = $1 AND camera_consent_given = FALSE`, [pc.participant_id]);
+  }
   // Paso 2 del protocolo (TG §9.5): calibración antes del tablero, no
   // directo a /app — ver renderCalibration() para el porqué.
   res.redirect(`/t/${encodeURIComponent(pc.access_token)}/calibration`);
@@ -176,7 +184,7 @@ trackingRouter.get("/:token/calibration", async (req, res) => {
   if (!pc.calibration_started_at) {
     await query(`UPDATE participant_campaign SET calibration_started_at = now() WHERE id = $1 AND calibration_started_at IS NULL`, [pc.id]);
   }
-  res.set(HTML).send(renderCalibration(pc.access_token));
+  res.set(HTML).send(renderCalibration(pc.access_token, pc.camera_consent_given));
 });
 
 trackingRouter.post("/:token/calibration/complete", async (req, res) => {
@@ -214,7 +222,7 @@ trackingRouter.get("/:token/app", async (req, res) => {
     query(`SELECT * FROM fictitious_contacts WHERE campaign_id = $1 ORDER BY display_name`, [pc.campaign_id]).then((r) => r.rows),
     query(`SELECT id, name FROM board_templates WHERE campaign_id = $1 ORDER BY created_at`, [pc.campaign_id]).then((r) => r.rows),
   ]);
-  res.set(HTML).send(renderApp(pc.access_token, { inbox, view: req.query.v, boardsData, contacts, boardTemplates }));
+  res.set(HTML).send(renderApp(pc.access_token, { inbox, view: req.query.v, boardsData, contacts, boardTemplates, cameraConsent: pc.camera_consent_given }));
 });
 
 // Bandeja en JSON para el sondeo en vivo del tablero (sin recargar la página).
@@ -256,6 +264,7 @@ trackingRouter.get("/:token/d/:deliveryId", async (req, res) => {
     deliveryId: d.delivery_id, kind: d.kind, is_attack: d.is_attack,
     from: d.sender_label || (d.kind === "task" ? "TaskFlow" : "Notificaciones"),
     subject: d.subject, body: d.body, cta_label: d.cta_label, branches,
+    cameraConsent: pc.camera_consent_given,
   }));
 });
 
@@ -298,6 +307,7 @@ trackingRouter.get("/:token/d/:deliveryId/go", async (req, res) => {
   await recordOnce(pc.id, d.delivery_id, "clic", reactionMs(d.delivered_at));
   res.set(HTML).send(renderStimulusLanding(pc.access_token, {
     deliveryId: d.delivery_id, landing_kind: d.landing_kind || "form", landing_config: d.landing_config || {},
+    cameraConsent: pc.camera_consent_given,
   }));
 });
 
@@ -312,6 +322,7 @@ trackingRouter.post("/:token/d/:deliveryId/proceed", async (req, res) => {
   await recordOnce(pc.id, d.delivery_id, "clic", reactionMs(d.delivered_at));
   res.set(HTML).send(renderStimulusLanding(pc.access_token, {
     deliveryId: d.delivery_id, landing_kind: d.landing_kind || "form", landing_config: d.landing_config || {},
+    cameraConsent: pc.camera_consent_given,
   }));
 });
 
@@ -671,6 +682,100 @@ trackingRouter.post("/:token/behavior", async (req, res) => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// Captura biométrica facial (extensión fuera del alcance original de TG
+// §8.2 Fase 1 -- ver docs/2026-09-12_captura-facial-biometrica.md y la
+// migración 015). Ver apps/api/public/js/facial-capture.js para qué envía el
+// navegador y por qué: solo 5 escalares derivados de blendshapes de
+// MediaPipe (nunca video, imágenes ni landmarks/blendshapes crudos). Este
+// endpoint solo valida y guarda -- mismo criterio que POST /:token/behavior,
+// deliberadamente NO usa recordOnce/dedup porque cada muestra es la señal en
+// sí, no un evento de negocio.
+const FACIAL_MAX_SAMPLES_PER_REQUEST = 200; // debe calzar con MAX_SAMPLES_PER_REQUEST en facial-capture.js.
+
+// Clamp amplio [-1,1]: eye_openness/brow_tension/mouth_tension viven en
+// [0,1] y gaze_x/gaze_y en aprox. [-1,1] -- un solo clamp común alcanza para
+// las cuatro, sin necesitar distinguir cuál campo es cuál aquí.
+function clampSignalFloat(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return null;
+  return Math.min(1, Math.max(-1, n));
+}
+
+function sanitizeFacialSample(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const t = clampInt(raw.t, 0, 24 * 60 * 60 * 1000);
+  if (t === null) return null;
+  const faceDetected = raw.fd === true;
+  if (!faceDetected) {
+    return { t_ms: t, event_type: "facial_sample", face_detected: false, eye_openness: null, blink: null, gaze_x: null, gaze_y: null, brow_tension: null, mouth_tension: null };
+  }
+  return {
+    t_ms: t,
+    event_type: "facial_sample",
+    face_detected: true,
+    eye_openness: clampSignalFloat(raw.eo),
+    blink: raw.bl === true,
+    gaze_x: clampSignalFloat(raw.gx),
+    gaze_y: clampSignalFloat(raw.gy),
+    brow_tension: clampSignalFloat(raw.bt),
+    mouth_tension: clampSignalFloat(raw.mt),
+  };
+}
+
+const FACIAL_EVENT_COLUMNS = 10; // facial_session_id, t_ms, event_type, face_detected, eye_openness, blink, gaze_x, gaze_y, brow_tension, mouth_tension
+
+async function insertFacialEvents(sessionId, samples) {
+  const values = [];
+  const placeholders = samples.map((s, i) => {
+    const base = i * FACIAL_EVENT_COLUMNS;
+    values.push(sessionId, s.t_ms, s.event_type, s.face_detected, s.eye_openness, s.blink, s.gaze_x, s.gaze_y, s.brow_tension, s.mouth_tension);
+    return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8}, $${base + 9}, $${base + 10})`;
+  });
+  await query(
+    `INSERT INTO facial_events (facial_session_id, t_ms, event_type, face_detected, eye_openness, blink, gaze_x, gaze_y, brow_tension, mouth_tension)
+     VALUES ${placeholders.join(", ")}`,
+    values
+  );
+}
+
+trackingRouter.post("/:token/facial", async (req, res) => {
+  const pc = await loadPC(req.params.token);
+  if (!pc) return res.status(204).end(); // mismo criterio que /behavior: un token vencido no debe romper la página del participante.
+  if (!pc.camera_consent_given) return res.status(204).end(); // sin consentimiento de cámara, se ignora cualquier lote (defensa en profundidad: el script ni debería estar cargado).
+
+  const body = req.body ?? {};
+  if (!UUID_RE.test(body.session_id || "")) return res.status(400).json({ error: "session_id inválido" });
+  if (typeof body.phase !== "string" || !body.phase) return res.status(400).json({ error: "phase requerido" });
+  if (!Array.isArray(body.samples) || body.samples.length === 0) return res.status(400).json({ error: "samples requerido" });
+  if (body.samples.length > FACIAL_MAX_SAMPLES_PER_REQUEST) {
+    return res.status(400).json({ error: `máximo ${FACIAL_MAX_SAMPLES_PER_REQUEST} muestras por request` });
+  }
+  const deliveryId = typeof body.delivery_id === "string" && UUID_RE.test(body.delivery_id) ? body.delivery_id : null;
+
+  const samples = body.samples.map(sanitizeFacialSample).filter(Boolean);
+  if (samples.length === 0) return res.status(400).json({ error: "ninguna muestra válida en el lote" });
+
+  try {
+    await query(
+      `INSERT INTO facial_sessions (id, participant_campaign_id, delivery_id, phase, camera_w, camera_h, sample_count)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       ON CONFLICT (id) DO UPDATE SET
+         last_flush_at = now(),
+         sample_count = facial_sessions.sample_count + EXCLUDED.sample_count`,
+      [
+        body.session_id, pc.id, deliveryId, body.phase.slice(0, 40),
+        clampInt(body.camera_w, 0, 32767), clampInt(body.camera_h, 0, 32767),
+        samples.length,
+      ]
+    );
+    await insertFacialEvents(body.session_id, samples);
+    res.status(204).end();
+  } catch (err) {
+    res.status(400).json({ error: "lote inválido", detail: err.message });
+  }
+});
+
 trackingRouter.post("/:token/finish", async (req, res) => {
   const pc = await loadPC(req.params.token);
   if (!pc) return res.status(404).set(HTML).send(renderInvalid());
@@ -688,7 +793,7 @@ trackingRouter.get("/:token/survey", async (req, res) => {
   const already = await query(`SELECT 1 FROM post_session_survey WHERE participant_campaign_id = $1`, [pc.id]);
   if (already.rows.length > 0) return res.redirect(`/t/${t}/debrief`);
   const attack = await primaryAttack(pc.id);
-  res.set(HTML).send(renderSurvey(pc.access_token, buildSurveySchema(attack ? attack.vector : null)));
+  res.set(HTML).send(renderSurvey(pc.access_token, buildSurveySchema(attack ? attack.vector : null), pc.camera_consent_given));
 });
 
 trackingRouter.post("/:token/survey", async (req, res) => {

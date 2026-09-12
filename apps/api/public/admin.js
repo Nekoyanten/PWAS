@@ -509,6 +509,7 @@ async function loadResults() {
   }
   loadBehaviorSummary();
   loadFeaturesSummary();
+  loadFacialFeaturesSummary();
   loadRiskSummary();
 }
 
@@ -554,6 +555,51 @@ $("#downloadFeaturesBtn").addEventListener("click", async () => {
     $("#featuresMsg").textContent = "Listo ✓";
   } catch (e) { $("#featuresMsg").textContent = "Error: " + e.message; }
 });
+
+/* -------- Captura biométrica facial -------- */
+async function loadFacialFeaturesSummary() {
+  const tbody = $("#facialTable tbody");
+  if (!CURRENT_CAMP) { tbody.innerHTML = `<tr><td colspan="8" class="hint">Elige una campaña en el paso 2.</td></tr>`; return; }
+  try {
+    const { por_fase } = await api("GET", `/api/dashboard/facial-features-summary?campaign_id=${CURRENT_CAMP}`);
+    tbody.innerHTML = por_fase.length
+      ? por_fase.map((r) => `<tr>
+          <td>${esc(PHASE_LABEL[r.phase] || r.phase)}</td>
+          <td>${r.sesiones_totales}</td><td>${r.con_features}</td>
+          <td>${r.deteccion_rostro_promedio != null ? Math.round(r.deteccion_rostro_promedio * 100) + "%" : "—"}</td>
+          <td>${r.parpadeos_por_min_promedio != null ? r.parpadeos_por_min_promedio : "—"}</td>
+          <td>${r.tension_ceja_promedio != null ? r.tension_ceja_promedio : "—"}</td>
+          <td>${r.tension_boca_promedio != null ? r.tension_boca_promedio : "—"}</td>
+          <td>${r.con_linea_base_personal}</td>
+        </tr>`).join("")
+      : `<tr><td colspan="8" class="hint">Todavía no hay captura facial registrada para esta campaña (requiere consentimiento de cámara del participante).</td></tr>`;
+  } catch (e) { tbody.innerHTML = `<tr><td colspan="8" class="hint">Error: ${esc(e.message)}</td></tr>`; }
+}
+$("#recomputeFacialFeaturesBtn").addEventListener("click", async () => {
+  if (!CURRENT_CAMP) return alert("Elige una campaña en el paso 2.");
+  $("#facialMsg").textContent = "Calculando…";
+  try {
+    const r = await api("POST", "/api/dashboard/recompute-facial-features", { campaign_id: CURRENT_CAMP });
+    $("#facialMsg").textContent = `Calculadas ${r.computed} sesiones ✓`;
+    loadFacialFeaturesSummary();
+  } catch (e) { $("#facialMsg").textContent = "Error: " + e.message; }
+});
+async function downloadFacialCsv(path, filenamePrefix) {
+  if (!CURRENT_CAMP) return alert("Elige una campaña en el paso 2.");
+  $("#facialMsg").textContent = "Generando…";
+  try {
+    const res = await fetch(`/api/export/${path}.csv?campaign_id=${CURRENT_CAMP}`, { headers: { "x-api-key": KEY } });
+    if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || `HTTP ${res.status}`); }
+    const blob = await res.blob();
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `${filenamePrefix}_${currentCampaign()?.name || CURRENT_CAMP}.csv`.replace(/[^\w.-]+/g, "_");
+    a.click();
+    $("#facialMsg").textContent = "Listo ✓";
+  } catch (e) { $("#facialMsg").textContent = "Error: " + e.message; }
+}
+$("#downloadFacialEventsBtn").addEventListener("click", () => downloadFacialCsv("facial-events", "captura_facial"));
+$("#downloadFacialFeaturesBtn").addEventListener("click", () => downloadFacialCsv("facial-features", "features_faciales"));
 
 /* -------- Motor de decisión por riesgo (modo sombra) -------- */
 async function loadRiskSummary() {

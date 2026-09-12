@@ -353,7 +353,7 @@ campaignsRouter.post("/:id/reset", requireAdmin, async (req, res) => {
   await query(`INSERT INTO events (participant_campaign_id, delivery_id, event_type)
                SELECT d.participant_campaign_id, d.id, 'entregado' FROM deliveries d WHERE d.participant_campaign_id = ANY($1::uuid[])`, [pcIds]);
   await query(`UPDATE participant_campaign SET session_started_at = NULL, finished_at = NULL, usability_interactions = 0, calibration_started_at = NULL, calibration_completed_at = NULL WHERE id = ANY($1::uuid[])`, [pcIds]);
-  await query(`UPDATE participants SET consent_given = FALSE, consent_timestamp = NULL WHERE id IN (SELECT participant_id FROM participant_campaign WHERE campaign_id = $1)`, [req.params.id]);
+  await query(`UPDATE participants SET consent_given = FALSE, consent_timestamp = NULL, camera_consent_given = FALSE, camera_consent_timestamp = NULL WHERE id IN (SELECT participant_id FROM participant_campaign WHERE campaign_id = $1)`, [req.params.id]);
   res.json({ reset: pcIds.length });
 });
 
@@ -369,6 +369,6 @@ campaignsRouter.post("/:id/participants/:pcId/reset", requireAdmin, async (req, 
   await query(`INSERT INTO events (participant_campaign_id, delivery_id, event_type)
                SELECT d.participant_campaign_id, d.id, 'entregado' FROM deliveries d WHERE d.participant_campaign_id = $1`, [req.params.pcId]);
   await query(`UPDATE participant_campaign SET session_started_at = NULL, finished_at = NULL, usability_interactions = 0, calibration_started_at = NULL, calibration_completed_at = NULL WHERE id = $1`, [req.params.pcId]);
-  await query(`UPDATE participants SET consent_given = FALSE, consent_timestamp = NULL WHERE id = $1`, [pc.rows[0].participant_id]);
+  await query(`UPDATE participants SET consent_given = FALSE, consent_timestamp = NULL, camera_consent_given = FALSE, camera_consent_timestamp = NULL WHERE id = $1`, [pc.rows[0].participant_id]);
   res.json({ reset: 1 });
 });

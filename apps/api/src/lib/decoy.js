@@ -26,6 +26,24 @@ function behaviorCaptureTag(token, phase, deliveryId) {
   return `<script src="/js/behavior-capture.js" ${attrs.join(" ")}></script>`;
 }
 
+// Captura facial biométrica (extensión fuera del alcance original de TG
+// §8.2 Fase 1 -- ver docs/2026-09-12_captura-facial-biometrica.md). Nunca se
+// emite si `cameraConsent` no es TRUE: a diferencia de behaviorCaptureTag
+// (que solo depende de haber llegado a esta pantalla), esta requiere el
+// consentimiento SEPARADO de cámara (participants.camera_consent_given) --
+// sin él, el script ni siquiera se referencia en el HTML, así que el
+// navegador nunca pide permiso de cámara.
+function facialCaptureTag(token, phase, cameraConsent, deliveryId) {
+  if (!cameraConsent) return "";
+  const attrs = [
+    `data-token="${escapeHtml(token)}"`,
+    `data-phase="${escapeHtml(phase)}"`,
+    `data-camera-consent="1"`,
+  ];
+  if (deliveryId) attrs.push(`data-delivery-id="${escapeHtml(deliveryId)}"`);
+  return `<script src="/js/facial-capture.js" ${attrs.join(" ")}></script>`;
+}
+
 function shell(title, bodyHtml, opts = {}) {
   return `<!doctype html><html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -338,6 +356,8 @@ export function renderWelcome(token, campaignName) {
     <form method="POST" action="/t/${encodeURIComponent(token)}/consent">
       <label class="check"><input type="checkbox" name="consent" value="1" required>
         <span>He leído lo anterior y acepto participar en el piloto.</span></label>
+      <label class="check"><input type="checkbox" name="camera_consent" value="1">
+        <span>Además, acepto que se use mi cámara para derivar señales faciales (parpadeo, mirada, tensión de ceja/boca) durante la sesión. Es opcional y por separado del punto anterior: nunca se guarda video ni imágenes, solo esos valores. Puedo pausarlo en cualquier momento desde un aviso en pantalla.</span></label>
       <button class="btn block" type="submit">Comenzar</button>
     </form>
     <p class="note">Campaña: ${escapeHtml(campaignName || "—")} · Ejercicio académico autorizado.</p>
@@ -374,7 +394,7 @@ export function renderWelcome(token, campaignName) {
 const CALIBRATION_TARGET_CLICKS = 8;
 const CALIBRATION_PHRASE = "El veloz murciélago hindú comía feliz cardillo y kiwi.";
 
-export function renderCalibration(token) {
+export function renderCalibration(token, cameraConsent) {
   const t = encodeURIComponent(token);
   return shell("Calibración — TaskFlow", `
 <div class="plate">
@@ -451,10 +471,11 @@ export function renderCalibration(token) {
   }, 100);
 })();
 </script>
-${behaviorCaptureTag(token, "calibration")}`);
+${behaviorCaptureTag(token, "calibration")}
+${facialCaptureTag(token, "calibration", cameraConsent)}`);
 }
 
-export function renderApp(token, { inbox, view, boardsData, contacts, boardTemplates }) {
+export function renderApp(token, { inbox, view, boardsData, contacts, boardTemplates, cameraConsent }) {
   const t = encodeURIComponent(token);
   const unread = inbox.filter((m) => m.unread).length;
   const active = isView(view) ? view : DEFAULT_VIEW;
@@ -982,7 +1003,8 @@ function tfChat(){
   document.addEventListener('visibilitychange',function(){ if(!document.hidden) tick(); });
 })();
 </script>
-${behaviorCaptureTag(token, "app")}`, {
+${behaviorCaptureTag(token, "app")}
+${facialCaptureTag(token, "app", cameraConsent)}`, {
     head: `<script defer src="/vendor/alpine.min.js"></script>`,
     extraCss: `
 [x-cloak]{display:none!important}
@@ -1128,7 +1150,8 @@ function tfBranch(deliveryId, actionKey, btn){
   }).catch(function(){ btn.disabled = false; });
 }
 </script>
-${behaviorCaptureTag(token, "message", msg.deliveryId)}`);
+${behaviorCaptureTag(token, "message", msg.deliveryId)}
+${facialCaptureTag(token, "message", msg.cameraConsent, msg.deliveryId)}`);
 }
 
 export function renderStimulusLanding(token, delivery) {
@@ -1169,7 +1192,8 @@ export function renderStimulusLanding(token, delivery) {
   </div>
 </div>
 <p class="note" style="text-align:center;margin-top:1rem">Ejercicio académico · no se accede realmente a ninguna cuenta ni recurso.</p>
-${behaviorCaptureTag(token, "landing", delivery.deliveryId)}`);
+${behaviorCaptureTag(token, "landing", delivery.deliveryId)}
+${facialCaptureTag(token, "landing", delivery.cameraConsent, delivery.deliveryId)}`);
   }
 
   const cfg = delivery.landing_config || {};
@@ -1195,7 +1219,8 @@ document.getElementById('f').addEventListener('submit',function(e){
    .then(function(){location.href='/t/${t}/action-done'});
 });
 </script>
-${behaviorCaptureTag(token, "landing", delivery.deliveryId)}`);
+${behaviorCaptureTag(token, "landing", delivery.deliveryId)}
+${facialCaptureTag(token, "landing", delivery.cameraConsent, delivery.deliveryId)}`);
 }
 
 // Capa de intervención PAWS (jolting cognitivo, TG §8.2.5). Se muestra solo
@@ -1294,7 +1319,7 @@ export function renderActionDone(token) {
 </div>`);
 }
 
-export function renderSurvey(token, schema) {
+export function renderSurvey(token, schema, cameraConsent) {
   const t = encodeURIComponent(token);
   const vq = schema.vector_question, cq = schema.common;
   const radio = (name, q) => `
@@ -1332,7 +1357,8 @@ export function renderSurvey(token, schema) {
     </form>
   </div>
 </div>
-${behaviorCaptureTag(token, "survey")}`);
+${behaviorCaptureTag(token, "survey")}
+${facialCaptureTag(token, "survey", cameraConsent)}`);
 }
 
 export function renderDebrief(html) {

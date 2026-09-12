@@ -136,3 +136,82 @@ exportRouter.get("/session-features.:format", requireAdmin, async (req, res) => 
   }
   res.json(result.rows);
 });
+
+// Captura biométrica facial cruda (migración 015) -- equivalente exacto de
+// behavior-events.csv de arriba, pero para las muestras derivadas del
+// rostro (NUNCA video/imágenes/landmarks, ver facial-capture.js). Mismo
+// criterio de privacidad: pc.id, nunca external_hash.
+exportRouter.get("/facial-events.:format", requireAdmin, async (req, res) => {
+  const params = [];
+  let where = "";
+  if (req.query.campaign_id) {
+    params.push(req.query.campaign_id);
+    where = `WHERE pc.campaign_id = $${params.length}`;
+  }
+  const result = await query(
+    `SELECT
+       fs.id                AS session_id,
+       pc.id                AS participant_campaign_id,
+       fs.phase,
+       fs.camera_w, fs.camera_h,
+       p.role,
+       p.group_assignment,
+       p.team_label,
+       m.vector             AS attack_vector,
+       m.is_attack,
+       fe.t_ms,
+       fe.face_detected, fe.eye_openness, fe.blink, fe.gaze_x, fe.gaze_y,
+       fe.brow_tension, fe.mouth_tension
+     FROM facial_events fe
+     JOIN facial_sessions fs        ON fs.id = fe.facial_session_id
+     JOIN participant_campaign pc   ON pc.id = fs.participant_campaign_id
+     JOIN participants p            ON p.id = pc.participant_id
+     LEFT JOIN deliveries d         ON d.id = fs.delivery_id
+     LEFT JOIN messages m           ON m.id = d.message_id
+     ${where}
+     ORDER BY pc.id, fs.id, fe.t_ms`,
+    params
+  );
+  if (req.params.format === "csv") {
+    res.set("Content-Type", "text/csv; charset=utf-8");
+    res.set("Content-Disposition", "attachment; filename=facial_events.csv");
+    return res.send(toCsv(result.rows));
+  }
+  res.json(result.rows);
+});
+
+// Etiquetado fino de la captura facial (migración 015) -- equivalente
+// exacto de session-features.csv de arriba: una fila por sesión facial con
+// sus agregados y z-scores, ya calculados por
+// POST /api/dashboard/recompute-facial-features.
+exportRouter.get("/facial-features.:format", requireAdmin, async (req, res) => {
+  const params = [];
+  let where = "";
+  if (req.query.campaign_id) {
+    params.push(req.query.campaign_id);
+    where = `WHERE pc.campaign_id = $${params.length}`;
+  }
+  const result = await query(
+    `SELECT
+       f.session_id, f.participant_campaign_id, f.phase,
+       p.role, p.group_assignment, p.team_label,
+       f.n_samples, f.face_detected_ratio,
+       f.blink_count, f.blink_rate_per_min, f.eye_openness_mean, f.eye_openness_std,
+       f.gaze_dispersion_x, f.gaze_dispersion_y, f.gaze_mean_abs_x, f.gaze_mean_abs_y,
+       f.brow_tension_mean, f.brow_tension_std, f.mouth_tension_mean, f.mouth_tension_std,
+       f.blink_rate_per_min_z, f.brow_tension_mean_z, f.mouth_tension_mean_z, f.gaze_dispersion_x_z,
+       f.baseline_z_source, f.feature_version, f.computed_at
+     FROM facial_session_features f
+     JOIN participant_campaign pc ON pc.id = f.participant_campaign_id
+     JOIN participants p          ON p.id = pc.participant_id
+     ${where}
+     ORDER BY pc.id, f.session_id`,
+    params
+  );
+  if (req.params.format === "csv") {
+    res.set("Content-Type", "text/csv; charset=utf-8");
+    res.set("Content-Disposition", "attachment; filename=facial_session_features.csv");
+    return res.send(toCsv(result.rows));
+  }
+  res.json(result.rows);
+});
