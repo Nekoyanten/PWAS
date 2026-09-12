@@ -239,49 +239,60 @@ interactionRouter.get("/campaigns/:id/chat-scripts", requireAdmin, async (req, r
   res.json({ chat_scripts: r.rows });
 });
 
-// Dos guiones de ejemplo, cada uno con un mensaje ambiente y un ataque real
-// insertado -- referencian por NOMBRE dos de las plantillas "chat directo"
-// que ya vienen en la biblioteca estándar de mensajes (paso 3, ver
-// templates.js). Si esa plantilla todavía no existe (el admin no corrió
-// "Crear biblioteca estándar" en el paso 3), se informa cuál falta en vez de
-// fallar en silencio o crear un guion incompleto.
-const DEFAULT_CHAT_SCRIPTS = [
-  { name: "Guion — Urgencia por chat", steps: [
-    { type: "scripted", sender_name: "Andrés Gómez", body: "Hola, ¿cómo vas con lo de esta semana?" },
-    { type: "attack", sender_name: "Andrés Gómez", template_name: "Urgencia — Chat: se cae la demo si no confirmas ya" },
-  ] },
-  { name: "Guion — Escasez por chat", steps: [
-    { type: "scripted", sender_name: "Laura Méndez", body: "Oye, ¿tienes un minuto?" },
-    { type: "attack", sender_name: "Laura Méndez", template_name: "Escasez — Chat: quedan 2 lugares en la mesa de trabajo" },
-  ] },
-];
+// Un guion de ejemplo POR CADA ataque "chat directo" que exista en la
+// biblioteca de mensajes (paso 3, ver templates.js) -- no una lista fija de
+// 2, ni uno por vector, sino uno por CASO real (cada plantilla de ataque en
+// formato chat es su propio guion). Importante: el guion se nombra según la
+// plantilla exacta (no según el vector), justo para que dos ataques del
+// mismo vector -- por ejemplo, si un admin agrega una segunda plantilla de
+// "Urgencia" en formato chat -- generen DOS guiones en vez de que el
+// segundo tape al primero por compartir nombre. Así, si mañana se agrega
+// cualquier ataque nuevo en formato chat, este botón lo cubre solo, sin
+// tocar código y sin perder ningún caso.
+const CHAT_SCRIPT_OPENERS = {
+  autoridad: "Hola, ¿tienes un segundo? Es sobre un tema de acceso.",
+  urgencia: "Hola, ¿cómo vas con lo de esta semana?",
+  escasez: "Oye, ¿tienes un minuto?",
+  prueba_social: "Hola, ¿ya viste lo que mandó el equipo?",
+  curiosidad: "Oye, te tengo que contar algo.",
+};
 
 interactionRouter.post("/campaigns/:id/chat-scripts/seed-defaults", requireAdmin, async (req, res) => {
   const c = await query(`SELECT id FROM campaigns WHERE id = $1`, [req.params.id]);
   if (c.rows.length === 0) return res.status(404).json({ error: "Campaña no encontrada" });
+
+  // "templates" es global (no tiene campaign_id) -- se busca ahí, no en la
+  // tabla de la campaña.
+  const chatAttacks = await query(
+    `SELECT id, name, vector FROM templates WHERE kind = 'chat' AND is_attack = TRUE ORDER BY vector, name`
+  );
+  if (chatAttacks.rows.length === 0) {
+    return res.status(201).json({
+      chat_scripts: [],
+      total: 0,
+      error: 'Todavía no hay plantillas de ataque "chat directo" — crea primero la biblioteca estándar en el paso 3.',
+    });
+  }
+
   const created = [];
-  for (const tpl of DEFAULT_CHAT_SCRIPTS) {
-    const existing = await query(`SELECT id FROM chat_script_templates WHERE campaign_id = $1 AND name = $2`, [req.params.id, tpl.name]);
-    if (existing.rows.length > 0) { created.push({ id: existing.rows[0].id, name: tpl.name, skipped: true }); continue; }
-    const script = [];
-    let missingTemplate = null;
-    for (const step of tpl.steps) {
-      const sender_contact_id = step.sender_name ? await ensureContact(req.params.id, step.sender_name) : undefined;
-      if (step.type === "scripted") {
-        script.push({ type: "scripted", sender_contact_id, body: step.body });
-      } else {
-        const t = await query(`SELECT id FROM templates WHERE name = $1 AND is_attack = TRUE`, [step.template_name]);
-        if (t.rows.length === 0) { missingTemplate = step.template_name; break; }
-        script.push({ type: "attack", sender_contact_id, template_id: t.rows[0].id });
-      }
-    }
-    if (missingTemplate) {
-      created.push({ name: tpl.name, error: `Falta la plantilla "${missingTemplate}" — crea primero la biblioteca estándar en el paso 3.` });
-      continue;
-    }
+  for (let i = 0; i < chatAttacks.rows.length; i++) {
+    const t = chatAttacks.rows[i];
+    // El nombre de la PLANTILLA (globalmente único en la tabla templates) es
+    // lo que identifica el caso -- por eso se usa acá, no el vector.
+    const name = `Guion — ${t.name}`;
+    const existing = await query(`SELECT id FROM chat_script_templates WHERE campaign_id = $1 AND name = $2`, [req.params.id, name]);
+    if (existing.rows.length > 0) { created.push({ id: existing.rows[0].id, name, skipped: true }); continue; }
+
+    const senderName = DEFAULT_CONTACTS[i % DEFAULT_CONTACTS.length].display_name;
+    const sender_contact_id = await ensureContact(req.params.id, senderName);
+    const opener = CHAT_SCRIPT_OPENERS[t.vector] || "Hola, ¿tienes un segundo?";
+    const script = [
+      { type: "scripted", sender_contact_id, body: opener },
+      { type: "attack", sender_contact_id, template_id: t.id },
+    ];
     const r = await query(
       `INSERT INTO chat_script_templates (campaign_id, name, script) VALUES ($1,$2,$3::jsonb) RETURNING id, name`,
-      [req.params.id, tpl.name, JSON.stringify(script)]
+      [req.params.id, name, JSON.stringify(script)]
     );
     created.push(r.rows[0]);
   }
