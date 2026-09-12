@@ -835,11 +835,10 @@ $("#seedChatScriptsBtn").addEventListener("click", async () => {
   $("#seedChatScriptsMsg").textContent = "Creando…";
   try {
     const r = await api("POST", `/api/campaigns/${CURRENT_CAMP}/chat-scripts/seed-defaults`, {});
-    const nuevos = r.chat_scripts.filter((s) => !s.skipped && !s.error).length;
-    const errores = r.chat_scripts.filter((s) => s.error);
-    $("#seedChatScriptsMsg").textContent = errores.length
-      ? `${errores[0].error}`
-      : (nuevos ? `${nuevos} guiones nuevos ✓` : "Ya estaban todos creados ✓");
+    const nuevos = r.chat_scripts.filter((s) => !s.skipped).length;
+    $("#seedChatScriptsMsg").textContent = r.error
+      ? r.error
+      : (nuevos ? `${nuevos} guiones nuevos ✓ (${r.chat_scripts.length} en total, uno por cada ataque de chat)` : "Ya estaban todos creados ✓");
     await loadChatScripts(); await loadContacts(); renderBoardTplCols(); renderChatScriptSteps();
   } catch (e) { $("#seedChatScriptsMsg").textContent = "Error: " + e.message; }
 });

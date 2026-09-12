@@ -512,33 +512,84 @@ test("semillas de un clic (paso 6): compañeros, plantillas de tablero y guiones
   const seedBoards2 = await api("POST", `/api/campaigns/${freshCampaignId}/board-templates/seed-defaults`, {});
   assert.ok(seedBoards2.body.board_templates.every((t) => t.skipped));
 
-  // guiones de chat de ejemplo: referencian plantillas "chat directo" reales
-  // de la biblioteca estándar por nombre -- si no existen, se informa cuál
-  // falta en vez de crear un guion roto. Las plantillas son globales (no por
-  // campaña) y otras pruebas de esta misma suite ya pueden haber corrido
-  // /api/templates/seed-defaults antes que esta -- para probar el camino de
-  // "falta la plantilla" sin depender del orden de ejecución, se borra
-  // puntualmente la que necesita este guion (si existe) antes de sembrar, y
-  // se restaura después con el propio seed-defaults de plantillas
-  // (idempotente, no afecta a las demás pruebas).
+  // guiones de chat de ejemplo: pedido del usuario, uno POR CADA CASO de
+  // ataque "chat directo" que exista en la biblioteca (no una lista fija de
+  // 2, ni uno por vector -- si dos plantillas comparten vector, cada una
+  // saca su propio guion, nombrado según la plantilla exacta, para que
+  // ninguna tape a la otra). Hoy la biblioteca estándar trae 5: Autoridad,
+  // Urgencia, Escasez, Prueba social y Curiosidad (ver templates.js). Las
+  // plantillas son globales (no por campaña), y otra prueba de este mismo
+  // archivo ("plantillas 'chat directo'...") crea y ENTREGA de verdad una
+  // plantilla de chat propia -- una vez entregada, no se puede borrar (con
+  // razón: en un laboratorio real no se debe poder borrar una plantilla que
+  // ya generó datos), así que esta prueba nunca asume que el catálogo
+  // global de plantillas de chat pueda quedar en cero por su cuenta. En vez
+  // de eso, borra lo que sí se pueda borrar y compara siempre contra lo que
+  // realmente queda en cada momento (vía GET), para no depender del orden
+  // de ejecución ni de qué haya quedado pegado de otra prueba.
   const freshCampaignId2 = (await api("POST", "/api/campaigns", { name: `Seed chat ${Date.now()}` })).body.campaign.id;
-  const existingList = await api("GET", "/api/templates");
-  const urgenciaTpl = existingList.body.templates.find((t) => t.name === "Urgencia — Chat: se cae la demo si no confirmas ya");
-  if (urgenciaTpl) await api("DELETE", `/api/templates/${urgenciaTpl.id}`);
+  const isChatAttack = (t) => t.kind === "chat" && t.is_attack;
+  const before = await api("GET", "/api/templates");
+  for (const tpl of before.body.templates.filter(isChatAttack)) {
+    await api("DELETE", `/api/templates/${tpl.id}`);
+  }
+  const stillThere = (await api("GET", "/api/templates")).body.templates.filter(isChatAttack);
 
   const seedChatsMissing = await api("POST", `/api/campaigns/${freshCampaignId2}/chat-scripts/seed-defaults`, {});
   assert.equal(seedChatsMissing.status, 201);
-  const urgenciaAttempt1 = seedChatsMissing.body.chat_scripts.find((s) => s.name === "Guion — Urgencia por chat");
-  assert.ok(urgenciaAttempt1.error, "sin la plantilla que necesita, avisa cuál falta en vez de fallar en silencio o crear un guion incompleto");
+  assert.equal(seedChatsMissing.body.total, stillThere.length,
+    "el total siempre refleja cuántas plantillas de ataque de chat existen de verdad en ese momento");
+  if (stillThere.length === 0) {
+    assert.ok(seedChatsMissing.body.error, "sin ninguna plantilla de chat, avisa en vez de fallar en silencio o no hacer nada sin explicar por qué");
+  } else {
+    assert.ok(!seedChatsMissing.body.error);
+  }
 
-  await api("POST", "/api/templates/seed-defaults", {}); // restaura la plantilla borrada arriba (idempotente para las demás)
+  // restaura las plantillas estándar que se hayan podido borrar arriba
+  // (idempotente por nombre: si alguna ya sigue existiendo -- como la que
+  // quedó pegada de la otra prueba -- no la toca; si falta, la recrea).
+  await api("POST", "/api/templates/seed-defaults", {});
+  const finalTpls = (await api("GET", "/api/templates")).body.templates.filter(isChatAttack);
+  assert.ok(finalTpls.length >= 5, "la biblioteca estándar aporta al menos las 5 plantillas de chat, una por vector");
+
   const seedChats = await api("POST", `/api/campaigns/${freshCampaignId2}/chat-scripts/seed-defaults`, {});
   assert.equal(seedChats.status, 201);
-  const urgenciaAttempt2 = seedChats.body.chat_scripts.find((s) => s.name === "Guion — Urgencia por chat");
-  assert.ok(!urgenciaAttempt2.error && !urgenciaAttempt2.skipped, "con la plantilla ya restaurada, el guion que antes falló ahora se crea");
+  assert.equal(seedChats.body.total, finalTpls.length,
+    "un guion (o intento) por cada plantilla de ataque de chat que exista, sin importar cuántas sean");
+  assert.ok(!seedChats.body.error);
+
+  // cada plantilla de ataque de chat -- estándar o no -- debe tener su
+  // PROPIO guion, nombrado según ESA plantilla exacta, con el template_id
+  // correcto (nunca el de otra plantilla del mismo vector).
+  for (const tpl of finalTpls) {
+    const name = `Guion — ${tpl.name}`;
+    const s = seedChats.body.chat_scripts.find((x) => x.name === name);
+    assert.ok(s, `debería existir un guion para la plantilla "${tpl.name}": ${name}`);
+    assert.ok(!s.error, `"${name}" no debería fallar teniendo su plantilla disponible`);
+  }
+  const standardVectors = ["autoridad", "urgencia", "escasez", "prueba_social", "curiosidad"];
+  for (const vector of standardVectors) {
+    assert.ok(finalTpls.some((t) => t.vector === vector),
+      `la biblioteca estándar debería aportar al menos una plantilla de chat para "${vector}"`);
+  }
+
+  // segunda vez: idempotente, no duplica
+  const seedChats2 = await api("POST", `/api/campaigns/${freshCampaignId2}/chat-scripts/seed-defaults`, {});
+  assert.equal(seedChats2.body.total, finalTpls.length);
+  assert.ok(seedChats2.body.chat_scripts.every((s) => s.skipped));
+
+  // caso concreto: la plantilla estándar de Urgencia queda con SU PROPIO
+  // guion y SU PROPIO template_id, sin importar si algún otro caso comparte
+  // su mismo vector.
+  const urgenciaTpl = finalTpls.find((t) => t.vector === "urgencia" && t.name === "Urgencia — Chat: se cae la demo si no confirmas ya");
+  assert.ok(urgenciaTpl, "la plantilla estándar de Urgencia debería seguir en el catálogo");
   const chatScriptsList = await api("GET", `/api/campaigns/${freshCampaignId2}/chat-scripts`);
-  const urgenciaScript = chatScriptsList.body.chat_scripts.find((s) => s.name === "Guion — Urgencia por chat");
+  const urgenciaScript = chatScriptsList.body.chat_scripts.find((s) => s.name === `Guion — ${urgenciaTpl.name}`);
+  assert.ok(urgenciaScript, "el guion de la plantilla estándar de Urgencia debería existir con su propio nombre");
   assert.equal(urgenciaScript.script.length, 2);
+  assert.equal(urgenciaScript.script[0].type, "scripted");
+  assert.ok(urgenciaScript.script[0].sender_contact_id, "el mensaje ambiente queda con un remitente real, no null");
   assert.equal(urgenciaScript.script[1].type, "attack");
-  assert.ok(urgenciaScript.script[1].template_id, "el paso de ataque queda con un template_id real de la biblioteca estándar");
+  assert.equal(urgenciaScript.script[1].template_id, urgenciaTpl.id,
+    "el paso de ataque apunta exactamente a la plantilla de Urgencia, no a otra del mismo vector");
 });
