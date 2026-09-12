@@ -305,16 +305,50 @@ campaignsRouter.get("/:id/links", requireAdmin, async (req, res) => {
   res.json({ links: r.rows.map((x) => ({ ...x, url: `/t/${x.access_token}` })) });
 });
 
+// Borra el hilo de chat (lib/chat.js) de uno o más participantes, junto con
+// los "mensajes de ataque por chat" que ese hilo haya generado (uno propio
+// por participante, ver instantiateScript en lib/chat.js -- no son la fila
+// compartida de la biblioteca de plantillas, así que borrarlos es seguro).
+//
+// Por qué existe esto: un chat_thread se instancia UNA SOLA VEZ, la primera
+// vez que el participante abre la vista de chat (getOrCreateThread). Si en
+// ese momento la campaña todavía no tenía guion (o tenía uno distinto), el
+// hilo queda vacío/desactualizado PARA SIEMPRE -- crear o editar un guion
+// después nunca lo vuelve a tocar. Se descubrió en el uso real: un admin
+// cargó participantes, los probó (esto creó hilos vacíos), y recién después
+// armó el guion de chat -- el guion se guardaba bien en la base, pero jamás
+// aparecía al volver a entrar al chat porque el hilo ya existía. Para que
+// "Reiniciar" sirva de verdad para volver a probar tras cambiar algo en el
+// paso 6, tiene que incluir esto -- si no, sigue viéndose "roto" aunque el
+// guion esté perfectamente guardado.
+async function resetChatThreads(pcIds) {
+  if (pcIds.length === 0) return;
+  await query(
+    `DELETE FROM messages WHERE id IN (
+       SELECT d.message_id FROM chat_messages cm
+       JOIN chat_threads ct ON ct.id = cm.chat_thread_id
+       JOIN deliveries d ON d.id = cm.delivery_id
+       WHERE ct.participant_campaign_id = ANY($1::uuid[]) AND cm.kind = 'attack'
+     )`,
+    [pcIds]
+  );
+  await query(`DELETE FROM chat_threads WHERE participant_campaign_id = ANY($1::uuid[])`, [pcIds]);
+}
+
 // Reinicia TODA la campaña para pruebas: borra eventos, encuestas y estado de
 // sesión, y deja los mensajes ya enviados como "recién llegados" (sin abrir).
 // Conserva participantes, enlaces y mensajes: el participante puede repetir
-// la prueba con la misma bandeja.
+// la prueba con la misma bandeja. También borra los hilos de chat (ver
+// resetChatThreads arriba) para que, si cambiaste algo en Interacción · paso
+// 6 después de la primera prueba, la próxima vez que el participante abra el
+// chat sí refleje el guion/contactos actuales.
 campaignsRouter.post("/:id/reset", requireAdmin, async (req, res) => {
   const ids = await query(`SELECT id FROM participant_campaign WHERE campaign_id = $1`, [req.params.id]);
   const pcIds = ids.rows.map((r) => r.id);
   if (pcIds.length === 0) return res.json({ reset: 0 });
   await query(`DELETE FROM events WHERE participant_campaign_id = ANY($1::uuid[])`, [pcIds]);
   await query(`DELETE FROM post_session_survey WHERE participant_campaign_id = ANY($1::uuid[])`, [pcIds]);
+  await resetChatThreads(pcIds);
   await query(`UPDATE deliveries SET delivered_at = now() WHERE participant_campaign_id = ANY($1::uuid[])`, [pcIds]);
   await query(`INSERT INTO events (participant_campaign_id, delivery_id, event_type)
                SELECT d.participant_campaign_id, d.id, 'entregado' FROM deliveries d WHERE d.participant_campaign_id = ANY($1::uuid[])`, [pcIds]);
@@ -330,6 +364,7 @@ campaignsRouter.post("/:id/participants/:pcId/reset", requireAdmin, async (req, 
   if (pc.rows.length === 0) return res.status(404).json({ error: "Participante no encontrado en la campaña" });
   await query(`DELETE FROM events WHERE participant_campaign_id = $1`, [req.params.pcId]);
   await query(`DELETE FROM post_session_survey WHERE participant_campaign_id = $1`, [req.params.pcId]);
+  await resetChatThreads([req.params.pcId]);
   await query(`UPDATE deliveries SET delivered_at = now() WHERE participant_campaign_id = $1`, [req.params.pcId]);
   await query(`INSERT INTO events (participant_campaign_id, delivery_id, event_type)
                SELECT d.participant_campaign_id, d.id, 'entregado' FROM deliveries d WHERE d.participant_campaign_id = $1`, [req.params.pcId]);

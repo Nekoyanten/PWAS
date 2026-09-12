@@ -183,3 +183,67 @@ test("reset de participante permite volver a hacer la prueba", async () => {
   await completeCalibration(token);
   assert.match(await (await hop(`/t/${token}/app`)).text(), /\/d\/[0-9a-f-]{36}/);
 });
+
+// Bug real encontrado en uso: un admin cargó participantes, los probó (esto
+// crea el hilo de chat vacío porque todavía no había guion), y RECIÉN
+// DESPUÉS armó el guion de chat en el paso 6. El guion se guardaba bien en
+// la base -- pero como getOrCreateThread (lib/chat.js) solo instancia el
+// guion la primera vez que se crea el hilo, nunca volvía a aparecer al
+// reabrir el chat, sin ningún error visible. Este test fija ese
+// comportamiento: reproduce el bug (el guion posterior no aparece) y
+// confirma que "Reiniciar" (que ahora también borra el hilo, ver
+// resetChatThreads en campaigns.js) es la forma de que sí se refleje.
+test("un guion de chat creado después de que el participante ya abrió el chat solo se ve tras Reiniciar", async () => {
+  const t = await api("POST", "/api/templates", {
+    name: `ChatAtk ${Date.now()}`, vector: "curiosidad", kind: "chat", is_attack: true, channel: "web",
+    sender_label: "Compañero", subject_or_headline: "Mira esto", message_body: "<p>Mira lo que encontré.</p>",
+    cta_label: "Ver", landing_kind: "form",
+  });
+  assert.equal(t.status, 201);
+  const c = await api("POST", "/api/campaigns", { name: `ChatReset ${Date.now()}` });
+  const pr = await api("POST", "/api/participants/import", { participants: [{ external_hash: `cr_${Date.now()}`, role: "estudiante" }] });
+  const gen = await api("POST", `/api/campaigns/${c.body.campaign.id}/generate-tokens`, { participant_ids: [pr.body.participants[0].id] });
+  const token = gen.body.links[0].url.split("/").pop();
+  const pcId = (await pool.query(`SELECT id FROM participant_campaign WHERE access_token = $1`, [token])).rows[0].id;
+
+  await form(`/t/${token}/consent`, "consent=1");
+  await completeCalibration(token);
+
+  // el participante abre el chat ANTES de que exista ningún guion -> hilo vacío
+  const before = await (await hop(`/t/${token}/chat.json`)).json();
+  assert.equal(before.messages.length, 0);
+
+  // el admin arma el guion recién ahora (como hizo el usuario real)
+  const contact = await api("POST", `/api/campaigns/${c.body.campaign.id}/contacts`, { display_name: "Ana", role_label: "Diseño" });
+  assert.equal(contact.status, 201);
+  const script = await api("POST", `/api/campaigns/${c.body.campaign.id}/chat-scripts`, {
+    name: "Guion tardío",
+    script: [
+      { type: "scripted", sender_contact_id: contact.body.contact.id, body: "¿Viste esto?" },
+      { type: "attack", sender_contact_id: contact.body.contact.id, template_id: t.body.template.id },
+    ],
+  });
+  assert.equal(script.status, 201);
+
+  // reabrir el chat sin reiniciar: sigue vacío -- el guion nuevo no se aplicó solo
+  const stillEmpty = await (await hop(`/t/${token}/chat.json`)).json();
+  assert.equal(stillEmpty.messages.length, 0, "un guion creado después de instanciado el hilo no debería aparecer solo, sin reiniciar");
+
+  // Reiniciar el participante también borra su hilo de chat
+  const reset = await api("POST", `/api/campaigns/${c.body.campaign.id}/participants/${pcId}/reset`);
+  assert.equal(reset.body.reset, 1);
+  const threadGone = await pool.query(`SELECT COUNT(*)::int n FROM chat_threads WHERE participant_campaign_id = $1`, [pcId]);
+  assert.equal(threadGone.rows[0].n, 0, "reiniciar borra el hilo de chat existente");
+
+  // el reset también pide consentimiento de nuevo (igual que el resto de la campaña, ver test de arriba)
+  await form(`/t/${token}/consent`, "consent=1");
+  await completeCalibration(token);
+
+  // al volver a abrir el chat, se re-instancia con el guion que sí existe ahora
+  const after = await (await hop(`/t/${token}/chat.json`)).json();
+  assert.equal(after.messages.length, 2, "tras reiniciar, el chat se arma de nuevo con el guion actual");
+  assert.equal(after.messages[0].kind, "scripted");
+  assert.equal(after.messages[0].body, "¿Viste esto?");
+  assert.equal(after.messages[1].kind, "attack");
+  assert.equal(after.messages[1].attack_template_id, t.body.template.id);
+});
