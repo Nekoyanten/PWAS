@@ -384,6 +384,11 @@ p04,directivo,Equipo 2"></textarea>
         <h2>Árbol de respuestas</h2>
         <p class="hint">Qué botones de respuesta rápida ofrece un mensaje, y a qué siguiente plantilla lleva cada uno (ej. "Sí, es urgente" → un segundo mensaje con el enlace trampa). Es un árbol fijo, definido por ti: nunca interpreta lo que el participante escribe.</p>
         <div class="form-actions">
+          <button type="button" id="seedBranchesBtn" class="btn-sm">Crear árbol de respuestas de ejemplo</button>
+          <span id="seedBranchesMsg" class="hint"></span>
+        </div>
+        <p class="help">Encadena 10 respuestas de ejemplo (2 por vector) entre plantillas de la biblioteca estándar (paso 3) que compartan vector y canal — por ejemplo, "Ahora no, lo reviso más tarde" sobre el correo de Soporte TI lleva a un segundo correo de Legal con el mismo tono de autoridad. Es global (no depende de la campaña elegida arriba), igual que la propia biblioteca de plantillas. Si todavía no creaste la biblioteca estándar, hazlo primero en el paso 3.</p>
+        <div class="form-actions">
           <label>Plantilla de origen
             <select id="branchFromTpl" style="padding:.4rem .5rem;border:1px solid #cbd3e1;border-radius:6px;margin-left:.4rem"></select>
           </label>

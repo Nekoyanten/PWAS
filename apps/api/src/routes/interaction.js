@@ -177,6 +177,50 @@ const DEFAULT_BOARD_TEMPLATES = [
         checklist: [{ title: "Enviar a Dirección", done: true }] },
     ] },
   ] },
+  // Tres plantillas adicionales (antes solo había 2) -- mismo elenco de
+  // DEFAULT_CONTACTS, escenarios de oficina distintos entre sí para que el
+  // participante no vea siempre el mismo tipo de tablero de ejemplo.
+  { name: "Onboarding de nuevo integrante", columns: [
+    { name: "Por hacer", tasks: [
+      { title: "Preparar accesos y cuentas", responsible_name: "Diego Torres", priority: "alta",
+        checklist: [{ title: "Crear cuenta de correo", done: false }, { title: "Asignar equipo de cómputo", done: false }] },
+      { title: "Agendar reunión de bienvenida", responsible_name: "Sofía Ramírez", priority: "media", checklist: [] },
+    ] },
+    { name: "En curso", tasks: [
+      { title: "Acompañar la primera semana", responsible_name: "Laura Méndez", priority: "media",
+        checklist: [{ title: "Revisión de día 3", done: false }] },
+    ] },
+    { name: "Hecho", tasks: [
+      { title: "Enviar kit de bienvenida", responsible_name: "Marcela Ruiz", priority: "baja", checklist: [] },
+    ] },
+  ] },
+  { name: "Migración de servidor", columns: [
+    { name: "Por hacer", tasks: [
+      { title: "Inventariar servicios activos", responsible_name: "Diego Torres", priority: "alta", checklist: [] },
+      { title: "Coordinar ventana de mantenimiento", responsible_name: "Andrés Gómez", priority: "alta",
+        checklist: [{ title: "Confirmar horario con Infraestructura", done: false }] },
+    ] },
+    { name: "En curso", tasks: [
+      { title: "Migrar base de datos de prueba", responsible_name: "Diego Torres", priority: "alta",
+        checklist: [{ title: "Backup previo", done: true }, { title: "Validar integridad", done: false }] },
+    ] },
+    { name: "Hecho", tasks: [
+      { title: "Documentar el proceso", responsible_name: "Sofía Ramírez", priority: "media", checklist: [] },
+    ] },
+  ] },
+  { name: "Campaña de bienestar del trimestre", columns: [
+    { name: "Por hacer", tasks: [
+      { title: "Definir actividades del trimestre", responsible_name: "Laura Méndez", priority: "media", checklist: [] },
+      { title: "Reservar espacios", responsible_name: "Sofía Ramírez", priority: "baja", checklist: [] },
+    ] },
+    { name: "En curso", tasks: [
+      { title: "Difundir el cronograma", responsible_name: "Marcela Ruiz", priority: "media",
+        checklist: [{ title: "Publicar en cartelera", done: false }, { title: "Enviar recordatorio", done: false }] },
+    ] },
+    { name: "Hecho", tasks: [
+      { title: "Cerrar encuesta de satisfacción", responsible_name: "Andrés Gómez", priority: "baja", checklist: [] },
+    ] },
+  ] },
 ];
 
 interactionRouter.post("/campaigns/:id/board-templates/seed-defaults", requireAdmin, async (req, res) => {
@@ -342,6 +386,77 @@ interactionRouter.delete("/branches/:id", requireAdmin, async (req, res) => {
   const r = await query(`DELETE FROM message_branches WHERE id = $1 RETURNING id`, [req.params.id]);
   if (r.rows.length === 0) return res.status(404).json({ error: "Rama no encontrada" });
   res.json({ deleted: r.rows[0].id });
+});
+
+// Árbol de respuestas de ejemplo (un clic, igual que la biblioteca estándar
+// de plantillas y las semillas de compañeros/tableros/guiones). Antes de
+// esto no existía ninguna forma de sembrar un árbol de respuestas sin
+// armarlo a mano desde el panel -- pedido explícito del usuario, "lo mismo"
+// que ya existía para guiones de chat y plantillas de tablero.
+//
+// message_branches es GLOBAL (from_template_id/to_template_id apuntan a la
+// tabla "templates", que no tiene campaign_id -- ver migración 010), así
+// que esta semilla también es global: no recibe :id de campaña, a
+// diferencia de contactos/tableros/guiones.
+//
+// Cada entrada encadena dos plantillas del MISMO vector y del MISMO canal
+// (kind): correo->correo, tarea->tarea o chat->chat. No se mezclan canales
+// a propósito -- una rama que salga de un mensaje de chat hacia una
+// plantilla de correo se seguiría agregando al mismo hilo de chat (ver
+// POST /:token/d/:deliveryId/branch en tracking.js, que decide según el
+// canal del mensaje DE ORIGEN, no el de destino) pero con un cuerpo con
+// formato HTML pensado para bandeja, no para una burbuja de chat.
+const DEFAULT_BRANCHES = [
+  { from: "Autoridad — Soporte TI: verificación obligatoria", action_key: "mas_tarde", action_label: "Ahora no, lo reviso más tarde",
+    to: "Autoridad — Legal: firma pendiente de la política interna" },
+  { from: "Autoridad — Auditoría: confirma tu identidad por chat", action_key: "no_puedo_ahora", action_label: "No puedo confirmarlo ahora",
+    to: "Autoridad — Chat: el área legal necesita que confirmes un dato" },
+
+  { from: "Urgencia — Seguridad: tu sesión expira en 10 minutos", action_key: "no_fui_yo", action_label: "No fui yo quien inició esa sesión",
+    to: "Urgencia — TI: bloqueo de cuenta en 1 hora" },
+  { from: "Urgencia — Chat: se cae la demo si no confirmas ya", action_key: "dame_un_min", action_label: "Dame un minuto, ya reviso",
+    to: "Urgencia — Chat: me estoy quedando sin batería, confirma ya" },
+
+  { from: "Escasez — Formación: últimos 3 cupos (certificación)", action_key: "aun_disponible", action_label: "¿Sigue disponible?",
+    to: "Escasez — Beneficios: bono antes del viernes" },
+  { from: "Escasez — Chat: quedan 2 lugares en la mesa de trabajo", action_key: "guardame_uno", action_label: "Guárdame uno, confirmo en un momento",
+    to: "Escasez — Chat: se están acabando los cupos del taller" },
+
+  { from: "Prueba social — Equipo: 12 de 15 ya lo hicieron", action_key: "cuales_faltan", action_label: "¿Quiénes faltan además de mí?",
+    to: "Prueba social — Tarea: el resto del equipo ya autorizó el nuevo acceso" },
+  { from: "Prueba social — Chat: todo el equipo ya confirmó menos tú", action_key: "en_serio", action_label: "¿En serio? Ahora lo miro",
+    to: "Prueba social — Chat: hasta Diego ya lo hizo, jaja" },
+
+  { from: "Curiosidad — Documento compartido: 'Ajustes salariales Q3'", action_key: "quien_lo_compartio", action_label: "¿Quién me lo compartió?",
+    to: "Curiosidad — Nueva actualización con capturas del rediseño" },
+  { from: "Curiosidad — Chat: mira esto que encontré del equipo", action_key: "mandamelo_aqui", action_label: "Mándamelo mejor aquí",
+    to: "Curiosidad — Chat: no vas a creer lo que pasó en la reunión" },
+];
+
+interactionRouter.post("/templates/branches/seed-defaults", requireAdmin, async (req, res) => {
+  const created = [];
+  for (const b of DEFAULT_BRANCHES) {
+    const from = await query(`SELECT id FROM templates WHERE name = $1`, [b.from]);
+    const to = await query(`SELECT id FROM templates WHERE name = $1`, [b.to]);
+    if (from.rows.length === 0 || to.rows.length === 0) {
+      created.push({ from: b.from, to: b.to, error: "Falta la plantilla de origen o de destino — crea primero la biblioteca estándar (paso 3)." });
+      continue;
+    }
+    const existing = await query(
+      `SELECT id FROM message_branches WHERE from_template_id = $1 AND action_key = $2`,
+      [from.rows[0].id, b.action_key]
+    );
+    const skipped = existing.rows.length > 0;
+    const r = await query(
+      `INSERT INTO message_branches (from_template_id, action_key, action_label, to_template_id)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (from_template_id, action_key) DO UPDATE SET action_label = EXCLUDED.action_label, to_template_id = EXCLUDED.to_template_id
+       RETURNING id`,
+      [from.rows[0].id, b.action_key, b.action_label, to.rows[0].id]
+    );
+    created.push({ id: r.rows[0].id, from: b.from, action_key: b.action_key, skipped });
+  }
+  res.status(201).json({ branches: created, total: created.length });
 });
 
 // ---------------------------------------------------------------------------

@@ -29,21 +29,22 @@ const hop = (path, opts) => fetch(`${baseUrl}${path}`, { redirect: "manual", ...
 // paso como completado igual que haría el botón "Continuar" del cliente.
 const completeCalibration = (token) => hop(`/t/${token}/calibration/complete`, { method: "POST" });
 
-test("seed-defaults crea la biblioteca estándar (25 ataque + 6 relleno) y es idempotente", async () => {
+test("seed-defaults crea la biblioteca estándar (36 ataque + 40 relleno) y es idempotente", async () => {
   const r1 = await api("POST", "/api/templates/seed-defaults", {});
   assert.equal(r1.status, 201);
   assert.equal(r1.body.total, STANDARD_LIBRARY.length);
 
-  assert.equal(STANDARD_LIBRARY.filter((t) => t.is_attack).length, 25);
-  assert.equal(STANDARD_LIBRARY.filter((t) => t.is_attack === false).length, 6);
-  // 5 por vector desde esta entrega (antes 3): al menos una en formato
-  // 'chat' por vector, para que el paso 6 (Guiones de chat) tenga contenido
-  // real con el que armar un guion sin que el admin tenga que escribir uno
-  // desde cero.
+  assert.equal(STANDARD_LIBRARY.filter((t) => t.is_attack).length, 36);
+  assert.equal(STANDARD_LIBRARY.filter((t) => t.is_attack === false).length, 40);
+  // Diversificación por canal (hallazgo del 13 de septiembre de 2026): cada
+  // vector necesita al menos 2 plantillas 'chat' (para que el árbol de
+  // respuestas y los guiones de chat tengan con qué encadenar una escalada
+  // dentro del mismo hilo) y al menos 2 'task', no solo 1 de cada una.
   for (const vec of ["autoridad", "urgencia", "escasez", "prueba_social", "curiosidad"]) {
     const porVector = STANDARD_LIBRARY.filter((t) => t.is_attack && t.vector === vec);
-    assert.equal(porVector.length, 5, `${vec} debería tener 5 plantillas de ataque`);
-    assert.ok(porVector.some((t) => t.kind === "chat"), `${vec} debería tener al menos una plantilla 'chat directo'`);
+    assert.ok(porVector.length >= 7, `${vec} debería tener al menos 7 plantillas de ataque`);
+    assert.ok(porVector.filter((t) => t.kind === "chat").length >= 2, `${vec} debería tener al menos 2 plantillas 'chat directo'`);
+    assert.ok(porVector.filter((t) => t.kind === "task").length >= 2, `${vec} debería tener al menos 2 plantillas 'tarea'`);
   }
 
   const list = await api("GET", "/api/templates");

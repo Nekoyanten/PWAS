@@ -914,6 +914,18 @@ async function loadBranches() {
     try { await api("DELETE", "/api/branches/" + b.dataset.delBranch); loadBranches(); } catch (e) { alert(e.message); }
   });
 }
+$("#seedBranchesBtn").addEventListener("click", async () => {
+  $("#seedBranchesMsg").textContent = "Creando…";
+  try {
+    const r = await api("POST", "/api/templates/branches/seed-defaults", {});
+    const nuevas = r.branches.filter((b) => !b.skipped && !b.error).length;
+    const errores = r.branches.filter((b) => b.error);
+    $("#seedBranchesMsg").textContent = errores.length
+      ? `${errores.length} sin poder crear (falta la plantilla estándar) — revisa el paso 3`
+      : (nuevas ? `${nuevas} respuestas nuevas ✓ (${r.branches.length} en total)` : "Ya estaban todas creadas ✓");
+    await loadTemplates(); fillBranchTemplateSelects(); loadBranches();
+  } catch (e) { $("#seedBranchesMsg").textContent = "Error: " + e.message; }
+});
 $("#branchForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   const fromId = $("#branchFromTpl").value;
