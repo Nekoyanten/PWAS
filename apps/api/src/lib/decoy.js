@@ -1361,7 +1361,15 @@ ${behaviorCaptureTag(token, "survey")}
 ${facialCaptureTag(token, "survey", cameraConsent)}`);
 }
 
-export function renderDebrief(html) {
+// `token`/`origin` son opcionales solo por retrocompatibilidad de la firma;
+// todo llamador real de esta pantalla (tracking.js) sí los pasa -- es lo
+// único que le queda al participante para poder ejercer el retiro de datos
+// de la sección 9.1 más adelante, así que se guarda como URL ABSOLUTA (no
+// basta con la ruta relativa: el participante puede cerrar la pestaña hoy y
+// querer usar el enlace días después, desde otra pestaña o dispositivo).
+export function renderDebrief(html, token, origin) {
+  const t = token ? encodeURIComponent(token) : null;
+  const withdrawUrl = t ? `${origin || ""}/t/${t}/withdraw` : null;
   return shell("Información sobre el estudio", `
 <div class="debrief">
   <div class="card">
@@ -1369,6 +1377,11 @@ export function renderDebrief(html) {
     <h1>Información sobre el estudio</h1>
     <p>${html.replace(/\n\n/g, "</p><p>")}</p>
     <p style="margin-top:1.5rem;color:var(--faint);font-size:.9rem">Ya puedes cerrar esta pestaña. Gracias por tu participación.</p>
+    ${withdrawUrl ? `
+    <p style="margin-top:1.25rem;padding-top:1.25rem;border-top:1px solid var(--line-soft);font-size:.85rem;color:var(--muted)">
+      Tu participación es revocable en cualquier momento, incluso después de hoy. Si más adelante quieres que se borren tus datos, guarda este enlace:
+      <br><a href="${withdrawUrl}" style="color:var(--ink-2);word-break:break-all">${escapeHtml(withdrawUrl)}</a>
+    </p>` : ""}
   </div>
 </div>
 <script>try{for(var i=localStorage.length-1;i>=0;i--){var k=localStorage.key(i);if(k&&k.indexOf('tf_board_')===0)localStorage.removeItem(k);}}catch(e){}</script>`);
@@ -1380,5 +1393,30 @@ export function renderInvalid(msg) {
   <div class="brand" style="justify-content:center">${LOGO} TaskFlow</div>
   <h1>Enlace no válido</h1>
   <p class="sub">${escapeHtml(msg || "Este enlace no es válido o ya ha caducado.")}</p>
+</div></div>`);
+}
+
+// Retiro de datos post-sesión (TG §9.1, lib/withdrawal.js). Pantalla de
+// confirmación explícita -- el borrado es permanente y de un solo sentido,
+// así que no se dispara con un simple GET del enlace.
+export function renderWithdrawConfirm(token) {
+  const t = encodeURIComponent(token);
+  return shell("Retirar mis datos", `
+<div class="plate"><div class="sheet" style="text-align:center">
+  <div class="brand" style="justify-content:center">${LOGO} TaskFlow</div>
+  <h1>Retirar mis datos de este estudio</h1>
+  <p class="sub">Esto borra permanentemente todo lo registrado en tu sesión: los eventos de mouse y teclado, las señales faciales (si diste ese consentimiento aparte), tus respuestas a la encuesta final y tu participación en la campaña. No se puede deshacer, y este enlace deja de funcionar después.</p>
+  <form method="POST" action="/t/${t}/withdraw">
+    <button class="btn block" type="submit" style="background:var(--warn);border-color:var(--warn)">Sí, borrar todos mis datos</button>
+  </form>
+</div></div>`);
+}
+
+export function renderWithdrawn() {
+  return shell("Datos retirados", `
+<div class="plate"><div class="sheet" style="text-align:center">
+  <div class="brand" style="justify-content:center">${LOGO} TaskFlow</div>
+  <h1>Tus datos fueron retirados</h1>
+  <p class="sub">Se eliminó toda la información asociada a tu sesión. Este enlace ya no funciona. Gracias por haber participado.</p>
 </div></div>`);
 }

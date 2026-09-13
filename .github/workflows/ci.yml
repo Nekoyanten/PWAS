@@ -1,0 +1,83 @@
+name: CI (pruebas)
+
+# Por qué existe esto: hallazgo 4.2 del informe de revisión crítica del
+# 12 de septiembre de 2026 — deploy-render.yml dispara el despliegue a
+# producción en cada push a main, pero nada corre la suite de 126 pruebas
+# antes de eso. Es perfectamente posible fusionar un cambio que rompe una
+# prueba de integración real (contra Postgres) y que se despliegue solo.
+# Este workflow corre las pruebas en cada push y en cada pull request,
+# contra un Postgres real (servicio de GitHub Actions, no un mock), con
+# el mismo esquema y las mismas migraciones que producción — para que un
+# PR que rompe algo lo diga ANTES de que alguien lo revise a mano.
+#
+# Deliberadamente separado de deploy-render.yml: ese workflow sigue
+# disparando el deploy hook igual que antes; este solo corre pruebas y no
+# tiene ningún efecto sobre el despliegue (Render no espera a que termine).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: paws
+          POSTGRES_PASSWORD: paws_ci
+          POSTGRES_DB: paws_ci_test
+        ports:
+          - 5432:5432
+        # Node empieza a conectarse antes de que Postgres esté listo si no
+        # se espera este healthcheck -- mismo problema que ya se documentó
+        # para el Postgres local de desarrollo.
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgres://paws:paws_ci@localhost:5432/paws_ci_test
+
+    steps:
+      - name: Clonar el repositorio
+        uses: actions/checkout@v4
+
+      - name: Instalar Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: apps/api/package-lock.json
+
+      - name: Instalar dependencias
+        working-directory: apps/api
+        run: npm ci
+
+      - name: Crear el rol app_service (mismo bootstrap que Supabase)
+        # La migración 011 asume que app_service ya existe -- en Supabase lo
+        # crea quien configuró el proyecto, fuera de las migraciones (ver el
+        # comentario de esa migración). Un Postgres recién creado en CI no
+        # lo tiene, así que se crea aquí para que las migraciones se apliquen
+        # exactamente igual que contra producción, sin saltarse ninguna.
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE ROLE app_service LOGIN;"
+
+      - name: Aplicar schema.sql y todas las migraciones en orden
+        run: |
+          set -e
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/schema.sql
+          for f in db/migrations/*.sql; do
+            echo "-- aplicando $f"
+            psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f"
+          done
+
+      - name: Correr la suite de pruebas (unitarias + integración)
+        working-directory: apps/api
+        run: npm test

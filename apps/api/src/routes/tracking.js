@@ -4,8 +4,9 @@ import { buildSurveySchema, debriefText } from "../lib/survey.js";
 import {
   renderWelcome, renderCalibration, renderApp, renderMessage, renderStimulusLanding,
   renderActionDone, renderSurvey, renderDebrief, renderInvalid,
-  renderJoltingInterstitial,
+  renderJoltingInterstitial, renderWithdrawConfirm, renderWithdrawn,
 } from "../lib/decoy.js";
+import { withdrawParticipantData } from "../lib/withdrawal.js";
 import { scoreAndStoreDeliveryRisk } from "../lib/riskScore.js";
 import { resolveMessageFields, insertMessage, createDeliveryForParticipant } from "../lib/messageFactory.js";
 import * as boards from "../lib/boards.js";
@@ -844,5 +845,30 @@ trackingRouter.get("/:token/debrief", async (req, res) => {
   const pc = await loadPC(req.params.token);
   if (!pc) return res.status(404).set(HTML).send(renderInvalid());
   const attack = await primaryAttack(pc.id);
-  res.set(HTML).send(renderDebrief(debriefText(attack ? attack.vector : null)));
+  const origin = `${req.protocol}://${req.get("host")}`;
+  res.set(HTML).send(renderDebrief(debriefText(attack ? attack.vector : null), pc.access_token, origin));
+});
+
+// ---------------------------------------------------------------------------
+// TG §9.1: "la participación es voluntaria, informada y revocable en
+// cualquier momento sin consecuencia alguna". Antes de esto, "en cualquier
+// momento" solo era cierto DURANTE la sesión (dejar de marcar la casilla de
+// consentimiento) -- no había ninguna forma de ejercerlo después de que la
+// sesión había terminado. Ver lib/withdrawal.js y
+// docs/2026-09-12_retiro-de-datos-post-sesion.md.
+//
+// GET muestra una pantalla de confirmación explícita (el borrado es
+// permanente y de un solo sentido, así que no se dispara solo con abrir el
+// enlace); POST ejecuta el borrado real.
+trackingRouter.get("/:token/withdraw", async (req, res) => {
+  const pc = await loadPC(req.params.token);
+  if (!pc) return res.status(404).set(HTML).send(renderInvalid());
+  res.set(HTML).send(renderWithdrawConfirm(pc.access_token));
+});
+
+trackingRouter.post("/:token/withdraw", async (req, res) => {
+  const pc = await loadPC(req.params.token);
+  if (!pc) return res.status(404).set(HTML).send(renderInvalid());
+  await withdrawParticipantData(pc.id, pc.participant_id);
+  res.set(HTML).send(renderWithdrawn());
 });
