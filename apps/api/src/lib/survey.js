@@ -73,7 +73,20 @@ export const COMMON_QUESTIONS = {
 };
 
 // Texto de debriefing que se muestra DESPUÉS de enviar la encuesta.
-export function debriefText(vector) {
+//
+// `cameraConsentGiven` (participants.camera_consent_given) decide el párrafo
+// de cámara: antes este texto decía SIEMPRE "no se accedió a ninguna cámara,
+// micrófono ni ubicación", lo cual dejó de ser cierto para cualquier
+// participante que hubiera aceptado el consentimiento APARTE de cámara
+// (facial-capture.js) — el debriefing es precisamente el momento en que el
+// participante tiene derecho a una explicación completa y honesta de qué se
+// registró durante su sesión, así que decirle lo contrario de lo que
+// realmente pasó (aunque él mismo lo haya autorizado antes) es un problema
+// de transparencia, no un detalle menor. El caso sin cámara conserva la
+// frase original -- ahí sigue siendo exacta -- solo aclarando que se refiere
+// a acceso real (la pantalla de "permiso" del propio ataque simulado, tipo
+// OAuth, nunca pide ni concede acceso real a nada, con o sin este consentimiento).
+export function debriefText(vector, cameraConsentGiven) {
   const vectorNombre = {
     autoridad: "apelaba a la autoridad",
     urgencia: "generaba urgencia",
@@ -82,14 +95,26 @@ export function debriefText(vector) {
     curiosidad: "despertaba curiosidad",
   }[vector] || "usaba una técnica de influencia (autoridad, urgencia, escasez, prueba social o curiosidad)";
 
+  const cameraParagraph = cameraConsentGiven
+    ? `Además, como aceptaste por separado el consentimiento de cámara al inicio, sí se usó tu
+cámara durante la sesión para derivar 5 señales faciales agregadas (apertura ocular,
+parpadeo, mirada, tensión de ceja y de boca). Ese procesamiento ocurrió siempre
+<strong>dentro de tu propio navegador</strong>: nunca se guardó ni se envió video,
+ninguna imagen ni tus rasgos faciales originales, solo esos valores. Pudiste pausarlo
+en cualquier momento desde el aviso fijo en pantalla.`
+    : `No se recogió ninguna credencial ni ningún dato personal. La pantalla de "permiso" que
+viste en el mensaje simulado (si te tocó ese tipo de ataque) es enteramente decorativa:
+nunca concede acceso real a tu cámara, micrófono ni ubicación, la hayas aceptado o no.`;
+
   return `Durante este piloto participaste, además de en una prueba de usabilidad real,
 en una <strong>simulación autorizada de ingeniería social</strong> de carácter académico.
 Uno de los mensajes que recibiste dentro de la aplicación no era real: era un estímulo
 diseñado para este estudio que <strong>${vectorNombre}</strong>.
 
-No se recogió ninguna credencial, ningún dato personal, ni se accedió a ninguna
-cámara, micrófono ni ubicación. Solo se registró tu <em>comportamiento</em> frente al
-mensaje (si lo abriste, si hiciste clic, cuánto tardaste) de forma seudonimizada.
+${cameraParagraph}
+
+Solo se registró tu <em>comportamiento</em> frente al mensaje (si lo abriste, si hiciste
+clic, cuánto tardaste) de forma seudonimizada.
 
 Que hayas interactuado con el mensaje simulado <strong>no significa nada negativo sobre ti</strong>:
 estos estímulos están diseñados por profesionales para ser convincentes y todos somos

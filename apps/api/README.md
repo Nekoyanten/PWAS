@@ -79,8 +79,9 @@ distinta** (para poder compararlas).
 2. **Campaña y enlaces** → crear la campaña (solo un nombre) → "Generar enlaces
    para todos" → copiar/descargar los `/t/<token>` y entregarlos. El panel
    **"Verificación previa"** muestra en verde/rojo qué falta antes de la sesión.
-3. **Plantillas** → "Crear biblioteca estándar" (15 ataques = 3 por técnica + 6
-   de relleno). Puedes editar textos o "Restaurar textos estándar".
+3. **Plantillas** → "Crear biblioteca estándar" (36 ataques repartidos en correo,
+   tarea y chat — al menos 2 de cada canal por técnica — + 40 de relleno).
+   Puedes editar textos o "Restaurar textos estándar".
 4. **Mensajes** → elegir una plantilla → "Guardar el mensaje" → en la tabla,
    **"enviar"** y marcar el equipo. Envía **una técnica por equipo** (avisa si
    repites). Los mensajes de relleno sí pueden ir a todos.

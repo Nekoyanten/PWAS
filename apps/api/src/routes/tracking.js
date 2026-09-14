@@ -846,7 +846,7 @@ trackingRouter.get("/:token/debrief", async (req, res) => {
   if (!pc) return res.status(404).set(HTML).send(renderInvalid());
   const attack = await primaryAttack(pc.id);
   const origin = `${req.protocol}://${req.get("host")}`;
-  res.set(HTML).send(renderDebrief(debriefText(attack ? attack.vector : null), pc.access_token, origin));
+  res.set(HTML).send(renderDebrief(debriefText(attack ? attack.vector : null, pc.camera_consent_given), pc.access_token, origin));
 });
 
 // ---------------------------------------------------------------------------
