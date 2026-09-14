@@ -183,3 +183,182 @@ test("reset de participante permite volver a hacer la prueba", async () => {
   await completeCalibration(token);
   assert.match(await (await hop(`/t/${token}/app`)).text(), /\/d\/[0-9a-f-]{36}/);
 });
+
+// Bug real encontrado en uso: un admin cargó participantes, los probó (esto
+// crea el hilo de chat vacío porque todavía no había guion), y RECIÉN
+// DESPUÉS armó el guion de chat en el paso 6. El guion se guardaba bien en
+// la base -- pero como getOrCreateThread (lib/chat.js) solo instancia el
+// guion la primera vez que se crea el hilo, nunca volvía a aparecer al
+// reabrir el chat, sin ningún error visible. Este test fija ese
+// comportamiento: reproduce el bug (el guion posterior no aparece) y
+// confirma que "Reiniciar" (que ahora también borra el hilo, ver
+// resetChatThreads en campaigns.js) es la forma de que sí se refleje.
+test("un guion de chat creado después de que el participante ya abrió el chat solo se ve tras Reiniciar", async () => {
+  const t = await api("POST", "/api/templates", {
+    name: `ChatAtk ${Date.now()}`, vector: "curiosidad", kind: "chat", is_attack: true, channel: "web",
+    sender_label: "Compañero", subject_or_headline: "Mira esto", message_body: "<p>Mira lo que encontré.</p>",
+    cta_label: "Ver", landing_kind: "form",
+  });
+  assert.equal(t.status, 201);
+  const c = await api("POST", "/api/campaigns", { name: `ChatReset ${Date.now()}` });
+  const pr = await api("POST", "/api/participants/import", { participants: [{ external_hash: `cr_${Date.now()}`, role: "estudiante" }] });
+  const gen = await api("POST", `/api/campaigns/${c.body.campaign.id}/generate-tokens`, { participant_ids: [pr.body.participants[0].id] });
+  const token = gen.body.links[0].url.split("/").pop();
+  const pcId = (await pool.query(`SELECT id FROM participant_campaign WHERE access_token = $1`, [token])).rows[0].id;
+
+  await form(`/t/${token}/consent`, "consent=1");
+  await completeCalibration(token);
+
+  // el participante abre el chat ANTES de que exista ningún guion -> hilo vacío
+  const before = await (await hop(`/t/${token}/chat.json`)).json();
+  assert.equal(before.messages.length, 0);
+
+  // el admin arma el guion recién ahora (como hizo el usuario real)
+  const contact = await api("POST", `/api/campaigns/${c.body.campaign.id}/contacts`, { display_name: "Ana", role_label: "Diseño" });
+  assert.equal(contact.status, 201);
+  const script = await api("POST", `/api/campaigns/${c.body.campaign.id}/chat-scripts`, {
+    name: "Guion tardío",
+    script: [
+      { type: "scripted", sender_contact_id: contact.body.contact.id, body: "¿Viste esto?" },
+      { type: "attack", sender_contact_id: contact.body.contact.id, template_id: t.body.template.id },
+    ],
+  });
+  assert.equal(script.status, 201);
+
+  // reabrir el chat sin reiniciar: sigue vacío -- el guion nuevo no se aplicó solo
+  const stillEmpty = await (await hop(`/t/${token}/chat.json`)).json();
+  assert.equal(stillEmpty.messages.length, 0, "un guion creado después de instanciado el hilo no debería aparecer solo, sin reiniciar");
+
+  // Reiniciar el participante también borra su hilo de chat
+  const reset = await api("POST", `/api/campaigns/${c.body.campaign.id}/participants/${pcId}/reset`);
+  assert.equal(reset.body.reset, 1);
+  const threadGone = await pool.query(`SELECT COUNT(*)::int n FROM chat_threads WHERE participant_campaign_id = $1`, [pcId]);
+  assert.equal(threadGone.rows[0].n, 0, "reiniciar borra el hilo de chat existente");
+
+  // el reset también pide consentimiento de nuevo (igual que el resto de la campaña, ver test de arriba)
+  await form(`/t/${token}/consent`, "consent=1");
+  await completeCalibration(token);
+
+  // al volver a abrir el chat, se re-instancia con el guion que sí existe ahora
+  const after = await (await hop(`/t/${token}/chat.json`)).json();
+  assert.equal(after.messages.length, 2, "tras reiniciar, el chat se arma de nuevo con el guion actual");
+  assert.equal(after.messages[0].kind, "scripted");
+  assert.equal(after.messages[0].body, "¿Viste esto?");
+  assert.equal(after.messages[1].kind, "attack");
+  assert.equal(after.messages[1].attack_template_id, t.body.template.id);
+});
+
+// Captura biométrica facial (migración 015, extensión fuera del alcance
+// original de TG §8.2 Fase 1 -- ver docs/2026-09-12_captura-facial-
+// biometrica.md). Cubre: (a) el consentimiento de cámara es SEPARADO del
+// consentimiento general y por defecto NO se activa, (b) la etiqueta
+// <script> de facial-capture.js solo aparece cuando ese consentimiento
+// separado se otorgó, (c) el endpoint de ingesta valida y guarda, (d) el
+// recálculo de features produce la fila esperada con z-score personal, y
+// (e) los exports nunca filtran external_hash -- mismo criterio de
+// privacidad que el resto de exports del proyecto.
+test("captura facial: consentimiento separado, ingesta, recálculo de features y export sin external_hash", async () => {
+  const t = await api("POST", "/api/templates", { name: `Fac ${Date.now()}`, vector: "urgencia", is_attack: true, subject_or_headline: "x", landing_kind: "form" });
+  const c = await api("POST", "/api/campaigns", { name: `FacC ${Date.now()}`, template_ids: [t.body.template.id] });
+  const team = `FacT ${Date.now()}`;
+  const hash = `fac_hash_${Date.now()}`;
+  const pr = await api("POST", "/api/participants/import", { participants: [{ external_hash: hash, role: "estudiante", team_label: team }] });
+  const gen = await api("POST", `/api/campaigns/${c.body.campaign.id}/generate-tokens`, { participant_ids: [pr.body.participants[0].id] });
+  const token = gen.body.links[0].url.split("/").pop();
+  const pcId = (await pool.query(`SELECT id FROM participant_campaign WHERE access_token = $1`, [token])).rows[0].id;
+
+  // la bienvenida ofrece el checkbox de cámara, SEPARADO del general
+  const welcomeHtml = await (await hop(`/t/${token}`)).text();
+  assert.match(welcomeHtml, /name="camera_consent"/, "debe existir un checkbox de consentimiento de cámara separado");
+
+  // consentir SOLO lo general (sin marcar camera_consent) -> sin captura facial
+  await form(`/t/${token}/consent`, "consent=1");
+  const pcRow1 = await pool.query(`SELECT p.camera_consent_given FROM participant_campaign pc JOIN participants p ON p.id = pc.participant_id WHERE pc.id = $1`, [pcId]);
+  assert.equal(pcRow1.rows[0].camera_consent_given, false, "sin marcar el checkbox, camera_consent_given debe quedar en FALSE");
+  const calibNoCam = await (await hop(`/t/${token}/calibration`)).text();
+  assert.doesNotMatch(calibNoCam, /facial-capture\.js/, "sin consentimiento de cámara, el script ni se referencia en el HTML");
+
+  // reiniciar y esta vez sí aceptar cámara
+  await api("POST", `/api/campaigns/${c.body.campaign.id}/participants/${pcId}/reset`);
+  await form(`/t/${token}/consent`, "consent=1&camera_consent=1");
+  const pcRow2 = await pool.query(`SELECT p.camera_consent_given FROM participant_campaign pc JOIN participants p ON p.id = pc.participant_id WHERE pc.id = $1`, [pcId]);
+  assert.equal(pcRow2.rows[0].camera_consent_given, true);
+  const calibWithCam = await (await hop(`/t/${token}/calibration`)).text();
+  assert.match(calibWithCam, /data-camera-consent="1"/, "con consentimiento de cámara, la etiqueta sí se emite");
+  await completeCalibration(token);
+  const appHtml = await (await hop(`/t/${token}/app`)).text();
+  assert.match(appHtml, /facial-capture\.js/);
+
+  // ingesta: un lote con una muestra sin rostro y varias con señal, ~15 Hz
+  const calibSessionId = "11111111-1111-4111-8111-111111111111";
+  const calibSamples = Array.from({ length: 20 }, (_, i) => ({
+    t: i * 66, fd: true, eo: 0.9, bl: false, gx: 0, gy: 0, bt: 0.1, mt: 0.1,
+  }));
+  const ingestCalib = await hop(`/t/${token}/facial`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ session_id: calibSessionId, phase: "calibration", samples: calibSamples, camera_w: 320, camera_h: 240 }),
+  });
+  assert.equal(ingestCalib.status, 204);
+
+  const appSessionId = "22222222-2222-4222-8222-222222222222";
+  const appSamples = [
+    { t: 0, fd: false }, // sin rostro: debe guardarse con face_detected=false y el resto NULL
+    ...Array.from({ length: 15 }, (_, i) => ({ t: 66 * (i + 1), fd: true, eo: 0.85, bl: i === 5, gx: 0.2, gy: -0.1, bt: 0.6, mt: 0.5 })),
+  ];
+  const ingestApp = await hop(`/t/${token}/facial`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ session_id: appSessionId, phase: "app", samples: appSamples, camera_w: 320, camera_h: 240 }),
+  });
+  assert.equal(ingestApp.status, 204);
+
+  const sessRows = await pool.query(`SELECT id, phase, sample_count FROM facial_sessions WHERE participant_campaign_id = $1 ORDER BY started_at`, [pcId]);
+  assert.equal(sessRows.rows.length, 2);
+  const noFaceRow = await pool.query(`SELECT face_detected, eye_openness, brow_tension FROM facial_events WHERE facial_session_id = $1 AND t_ms = 0`, [appSessionId]);
+  assert.equal(noFaceRow.rows[0].face_detected, false);
+  assert.equal(noFaceRow.rows[0].eye_openness, null, "sin rostro detectado, las columnas de señal deben quedar NULL, nunca un valor inventado");
+
+  // sin consentimiento de cámara, la ingesta se ignora en silencio (204, sin filas)
+  const otherHash = `fac_nocam_${Date.now()}`;
+  const pr2 = await api("POST", "/api/participants/import", { participants: [{ external_hash: otherHash, role: "estudiante", team_label: team }] });
+  const gen2 = await api("POST", `/api/campaigns/${c.body.campaign.id}/generate-tokens`, { participant_ids: [pr2.body.participants[0].id] });
+  const token2 = gen2.body.links[0].url.split("/").pop();
+  await form(`/t/${token2}/consent`, "consent=1"); // sin camera_consent
+  const rejectedSessionId = "33333333-3333-4333-8333-333333333333";
+  const rejected = await hop(`/t/${token2}/facial`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ session_id: rejectedSessionId, phase: "app", samples: [{ t: 0, fd: true, eo: 0.9 }] }),
+  });
+  assert.equal(rejected.status, 204);
+  const rejectedRows = await pool.query(`SELECT COUNT(*)::int n FROM facial_sessions WHERE id = $1`, [rejectedSessionId]);
+  assert.equal(rejectedRows.rows[0].n, 0, "sin consentimiento de cámara, ni siquiera se crea la sesión");
+
+  // recálculo de features -- pcA (única con calibración con cámara) usa línea base personal
+  const recompute = await api("POST", "/api/dashboard/recompute-facial-features", { campaign_id: c.body.campaign.id });
+  assert.equal(recompute.status, 200);
+  assert.equal(recompute.body.computed, 2);
+
+  const feat = await pool.query(`SELECT * FROM facial_session_features WHERE session_id = $1`, [appSessionId]);
+  assert.equal(feat.rows.length, 1);
+  assert.equal(feat.rows[0].baseline_z_source, "personal");
+  assert.equal(feat.rows[0].n_samples, 16);
+  assert.ok(Math.abs(Number(feat.rows[0].face_detected_ratio) - 15 / 16) < 1e-6);
+  assert.equal(feat.rows[0].blink_count, 1);
+  assert.ok(Number(feat.rows[0].brow_tension_mean_z) > 0, "la sesión 'app' está más tensa que su propia calibración -> z-score positivo");
+
+  // resumen del dashboard
+  const summary = await api("GET", `/api/dashboard/facial-features-summary?campaign_id=${c.body.campaign.id}`);
+  assert.equal(summary.status, 200);
+  assert.ok(summary.body.por_fase.some((r) => r.phase === "app" && r.con_features === 1));
+
+  // exports: nunca external_hash, sí participant_campaign_id
+  const evExport = await api("GET", `/api/export/facial-events.json?campaign_id=${c.body.campaign.id}`);
+  assert.equal(evExport.status, 200);
+  assert.ok(evExport.body.length > 0);
+  assert.doesNotMatch(JSON.stringify(evExport.body), new RegExp(hash), "el export crudo no debe exponer external_hash");
+  assert.ok(evExport.body.every((r) => r.participant_campaign_id));
+
+  const featExport = await api("GET", `/api/export/facial-features.json?campaign_id=${c.body.campaign.id}`);
+  assert.equal(featExport.status, 200);
+  assert.doesNotMatch(JSON.stringify(featExport.body), new RegExp(hash));
+  assert.ok(featExport.body.some((r) => r.session_id === appSessionId && r.baseline_z_source === "personal"));
+});

@@ -286,6 +286,17 @@ p04,directivo,Equipo 2"></textarea>
         <table id="featuresTable"><thead><tr><th>Pantalla</th><th>Sesiones</th><th>Con features</th><th>AUC promedio</th><th>Velocidad promedio</th><th>Dwell promedio</th><th>Línea base personal</th><th>Línea base poblacional</th></tr></thead><tbody></tbody></table>
       </div>
       <div class="panel">
+        <h2>Captura facial biométrica <span class="badge benigno">solo con consentimiento de cámara aparte</span></h2>
+        <p class="hint">Extensión fuera del alcance original del protocolo (§8.2 Fase 1) — el equipo de investigación pidió agregarla y confirmó que el comité de ética la aprobó por separado. Solo se activa para participantes que marcaron el checkbox de cámara <em>además</em> del consentimiento general (ver la pantalla de bienvenida). Se derivan 5 señales en el propio navegador del participante con MediaPipe (parpadeo, apertura ocular, mirada, tensión de ceja/boca) — <strong>nunca se graba ni se envía video, imágenes, ni los landmarks faciales crudos</strong>. Deliberadamente no alimenta el motor de riesgo en tiempo real: es almacenamiento para análisis offline, igual que la captura conductual de arriba.</p>
+        <div class="form-actions">
+          <button id="recomputeFacialFeaturesBtn" class="btn-sm">Calcular features faciales de esta campaña</button>
+          <button id="downloadFacialEventsBtn" class="btn-sm ghost">Descargar captura facial cruda (CSV)</button>
+          <button id="downloadFacialFeaturesBtn" class="btn-sm ghost">Descargar features faciales (CSV)</button>
+          <span id="facialMsg" class="hint"></span>
+        </div>
+        <table id="facialTable"><thead><tr><th>Pantalla</th><th>Sesiones</th><th>Con features</th><th>Detección de rostro</th><th>Parpadeos/min</th><th>Tensión de ceja</th><th>Tensión de boca</th><th>Línea base personal</th></tr></thead><tbody></tbody></table>
+      </div>
+      <div class="panel">
         <h2>Motor de decisión por riesgo <span class="badge benigno">modo sombra — no gatea nada real</span></h2>
         <p class="hint">Puntaje de riesgo calculado en tiempo real para cada clic en un ataque, a partir del comportamiento de mouse/teclado (TG §8.2.5). Es puramente informativo: la columna "el aviso habría salido" compara el puntaje con el umbral de la campaña (paso 2), pero <strong>no es lo que decidió</strong> si el participante vio el aviso de verdad — esa decisión sigue dependiendo solo de la probabilidad configurada arriba.</p>
         <table id="riskTable"><thead><tr><th>Grupo</th><th>Ataques</th><th>Puntuados</th><th>Con error</th><th>Riesgo promedio</th><th>El aviso habría salido (sombra)</th><th>El aviso salió de verdad</th></tr></thead><tbody></tbody></table>
@@ -295,6 +306,12 @@ p04,directivo,Equipo 2"></textarea>
     <!-- ============ 6 · INTERACCIÓN (compañeros, tableros, chat, respuestas) ============ -->
     <section id="tab-int" class="tabpane" hidden>
       <div class="banner warn" id="intNoCamp" hidden>Elige o crea una campaña en el paso 2 para administrar esto.</div>
+
+      <div class="banner" style="background:#eef2ff;border:1px solid #c7d2fe;color:#3730a3;padding:.6rem .8rem;border-radius:6px;margin-bottom:.8rem">
+        <strong>¿Qué es esto?</strong> Todo lo de este paso — compañeros, tableros y guiones de chat — es la "ambientación" de TaskFlow, la app señuelo que ve el participante: decide quién le escribe, qué tareas ve al entrar y en qué punto de una conversación aparece el ataque. Se guarda <strong>por campaña</strong> (la que tengas elegida arriba, en el paso 2) — si trabajas con más de una campaña, revisa cuál está activa antes de llenar esto.
+        <br><br>
+        <strong>Importante si ya probaste el chat antes de configurar esto:</strong> el chat de cada participante se arma una sola vez, la primera vez que esa persona lo abre. Si ya entraste como participante antes de crear o cambiar un guion, el chat de esa prueba quedó "congelado" y no va a mostrar el guion nuevo aunque se haya guardado bien. Para verlo reflejado, ve al paso 2 · Enlaces y usa "Reiniciar" sobre ese participante (o "Reiniciar todos") — eso también borra su chat, así que la próxima vez que lo abra arma todo de nuevo con lo que tengas configurado ahora.
+      </div>
 
       <div class="panel">
         <h2>6 · Compañeros de equipo ficticios</h2>
@@ -366,6 +383,11 @@ p04,directivo,Equipo 2"></textarea>
       <div class="panel">
         <h2>Árbol de respuestas</h2>
         <p class="hint">Qué botones de respuesta rápida ofrece un mensaje, y a qué siguiente plantilla lleva cada uno (ej. "Sí, es urgente" → un segundo mensaje con el enlace trampa). Es un árbol fijo, definido por ti: nunca interpreta lo que el participante escribe.</p>
+        <div class="form-actions">
+          <button type="button" id="seedBranchesBtn" class="btn-sm">Crear árbol de respuestas de ejemplo</button>
+          <span id="seedBranchesMsg" class="hint"></span>
+        </div>
+        <p class="help">Encadena 10 respuestas de ejemplo (2 por vector) entre plantillas de la biblioteca estándar (paso 3) que compartan vector y canal — por ejemplo, "Ahora no, lo reviso más tarde" sobre el correo de Soporte TI lleva a un segundo correo de Legal con el mismo tono de autoridad. Es global (no depende de la campaña elegida arriba), igual que la propia biblioteca de plantillas. Si todavía no creaste la biblioteca estándar, hazlo primero en el paso 3.</p>
         <div class="form-actions">
           <label>Plantilla de origen
             <select id="branchFromTpl" style="padding:.4rem .5rem;border:1px solid #cbd3e1;border-radius:6px;margin-left:.4rem"></select>

@@ -496,7 +496,7 @@ test("semillas de un clic (paso 6): compañeros, plantillas de tablero y guiones
   const freshCampaignId = (await api("POST", "/api/campaigns", { name: `Seed board ${Date.now()}` })).body.campaign.id;
   const seedBoards = await api("POST", `/api/campaigns/${freshCampaignId}/board-templates/seed-defaults`, {});
   assert.equal(seedBoards.status, 201);
-  assert.equal(seedBoards.body.total, 2);
+  assert.equal(seedBoards.body.total, 5);
   assert.ok(seedBoards.body.board_templates.every((t) => !t.skipped && !t.error));
   const boardsList = await api("GET", `/api/campaigns/${freshCampaignId}/board-templates`);
   const seedRows = boardsList.body.board_templates.find((t) => t.name === "Lanzamiento de producto Q4").seed;
@@ -592,4 +592,32 @@ test("semillas de un clic (paso 6): compañeros, plantillas de tablero y guiones
   assert.equal(urgenciaScript.script[1].type, "attack");
   assert.equal(urgenciaScript.script[1].template_id, urgenciaTpl.id,
     "el paso de ataque apunta exactamente a la plantilla de Urgencia, no a otra del mismo vector");
+});
+
+test("árbol de respuestas de ejemplo (paso 6): un clic, global, idempotente", async () => {
+  // A diferencia de compañeros/tableros/guiones, esto NO depende de ninguna
+  // campaña (message_branches es global, igual que templates) -- por eso no
+  // se crea ninguna campaña para esta prueba.
+  await api("POST", "/api/templates/seed-defaults", {}); // asegura que la biblioteca estándar exista
+
+  const r1 = await api("POST", "/api/templates/branches/seed-defaults", {});
+  assert.equal(r1.status, 201);
+  assert.equal(r1.body.total, 10, "10 respuestas de ejemplo, 2 por vector");
+  assert.ok(r1.body.branches.every((b) => !b.error), "todas deberían poder crearse teniendo la biblioteca estándar completa");
+
+  // caso concreto: la respuesta de "Autoridad — Soporte TI" queda apuntando
+  // a la plantilla correcta, no a cualquier otra del mismo vector.
+  const list = await api("GET", "/api/templates");
+  const fromTpl = list.body.templates.find((t) => t.name === "Autoridad — Soporte TI: verificación obligatoria");
+  const toTpl = list.body.templates.find((t) => t.name === "Autoridad — Legal: firma pendiente de la política interna");
+  const branches = await api("GET", `/api/templates/${fromTpl.id}/branches`);
+  const branch = branches.body.branches.find((b) => b.action_key === "mas_tarde");
+  assert.ok(branch, "la respuesta 'mas_tarde' debería existir sobre la plantilla de Soporte TI");
+  assert.equal(branch.to_template_id, toTpl.id);
+
+  // segunda vez: idempotente, no duplica ni falla por el ON CONFLICT ya
+  // existente en message_branches (from_template_id, action_key).
+  const r2 = await api("POST", "/api/templates/branches/seed-defaults", {});
+  assert.equal(r2.body.total, 10);
+  assert.ok(r2.body.branches.every((b) => b.skipped), "la segunda vez debería saltarse todas");
 });

@@ -2,6 +2,7 @@ import { Router } from "express";
 import { query } from "../db.js";
 import { requireAdmin } from "../middleware/requireAdmin.js";
 import { recomputeSessionFeatures } from "../lib/behaviorFeatures.js";
+import { recomputeFacialSessionFeatures } from "../lib/facialFeatures.js";
 
 export const dashboardRouter = Router();
 
@@ -174,6 +175,55 @@ dashboardRouter.get("/features-summary", requireAdmin, async (req, res) => {
   res.json({ por_fase: result.rows });
 });
 
+// Captura biométrica facial (migración 015) -- mismos dos endpoints que la
+// captura conductual (recompute a pedido + resumen agregado por fase), por
+// las mismas razones: no hay señal de "sesión cerrada" y la línea base de
+// calibración depende del conjunto completo. Ver facialFeatures.js.
+dashboardRouter.post("/recompute-facial-features", requireAdmin, async (req, res) => {
+  try {
+    const campaignId = typeof req.body?.campaign_id === "string" ? req.body.campaign_id : undefined;
+    const result = await recomputeFacialSessionFeatures({ campaignId });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: "no se pudieron recalcular las features faciales", detail: err.message });
+  }
+});
+
+dashboardRouter.get("/facial-features-summary", requireAdmin, async (req, res) => {
+  const params = [];
+  let where = "";
+  if (req.query.campaign_id) {
+    params.push(req.query.campaign_id);
+    where = `WHERE pc.campaign_id = $${params.length}`;
+  }
+  const result = await query(
+    `WITH sess AS (
+       SELECT fs.id, fs.phase, fs.participant_campaign_id
+       FROM facial_sessions fs
+       JOIN participant_campaign pc ON pc.id = fs.participant_campaign_id
+       ${where}
+     )
+     SELECT sess.phase,
+            COUNT(*)::int AS sesiones_totales,
+            COUNT(f.session_id)::int AS con_features,
+            ROUND(AVG(f.face_detected_ratio)::numeric, 3)   AS deteccion_rostro_promedio,
+            ROUND(AVG(f.blink_rate_per_min)::numeric, 2)    AS parpadeos_por_min_promedio,
+            ROUND(AVG(f.eye_openness_mean)::numeric, 3)     AS apertura_ocular_promedio,
+            ROUND(AVG(f.gaze_dispersion_x)::numeric, 3)     AS dispersion_mirada_x_promedio,
+            ROUND(AVG(f.brow_tension_mean)::numeric, 3)     AS tension_ceja_promedio,
+            ROUND(AVG(f.mouth_tension_mean)::numeric, 3)    AS tension_boca_promedio,
+            COUNT(*) FILTER (WHERE f.baseline_z_source = 'personal')::int    AS con_linea_base_personal,
+            COUNT(*) FILTER (WHERE f.baseline_z_source = 'poblacional')::int AS con_linea_base_poblacional,
+            MAX(f.computed_at) AS ultimo_calculo
+     FROM sess
+     LEFT JOIN facial_session_features f ON f.session_id = sess.id
+     GROUP BY sess.phase
+     ORDER BY sess.phase`,
+    params
+  );
+  res.json({ por_fase: result.rows });
+});
+
 // Resumen ejecutivo de una sola llamada — pensado para poblar el dashboard
 // de un vistazo (Objetivo 4).
 // Métricas sobre los deliveries de mensajes de ATAQUE, agrupadas por una sola
@@ -218,8 +268,14 @@ dashboardRouter.get("/overview", requireAdmin, async (req, res) => {
         COUNT(DISTINCT CASE WHEN e.event_type = 'reportado' THEN pc.id END) AS total_reportes,
         COUNT(DISTINCT CASE WHEN e.event_type = 'permiso_concedido' THEN pc.id END) AS total_permisos_concedidos,
         ROUND(COUNT(DISTINCT CASE WHEN s.recognized_as_simulated THEN pc.id END)::numeric
-              / NULLIF(COUNT(DISTINCT s.participant_campaign_id),0) * 100, 1) AS tasa_reconocimiento_pct
+              / NULLIF(COUNT(DISTINCT s.participant_campaign_id),0) * 100, 1) AS tasa_reconocimiento_pct,
+        -- N del sub-estudio exploratorio de captura facial (TG §8.2.9/§9.2/§9.6):
+        -- un SUBCONJUNTO de total_expuestos (el núcleo de Fase 1, mouse/teclado),
+        -- nunca un universo aparte -- así el panel deja tan visible como el texto
+        -- de la tesis que declinar la cámara no saca a nadie del piloto central.
+        COUNT(DISTINCT CASE WHEN p.camera_consent_given THEN pc.id END) AS total_consentimiento_camara
       FROM participant_campaign pc
+      JOIN participants p ON p.id = pc.participant_id
       LEFT JOIN post_session_survey s ON s.participant_campaign_id = pc.id
       LEFT JOIN events e ON e.participant_campaign_id = pc.id
     `),

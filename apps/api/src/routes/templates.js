@@ -275,6 +275,91 @@ export const STANDARD_LIBRARY = [
     cta_label: "Ver las capturas", landing_kind: "form",
     landing_config: { titulo: "Vista previa del rediseño", detalle: "Inicia sesión para ver las capturas antes del anuncio general." } },
 
+  // ---------- Diversificación por canal (kind: email/task/chat) ----------
+  // Antes de esto, cada vector tenía 3 correos, 1 tarea y 1 chat -- "ataques
+  // por canal" en el panel admin (dashboard.js: por_canal agrupa por
+  // m.kind) quedaba desbalanceado hacia correo. Estas 11 plantillas llevan
+  // cada vector a al menos 2 de cada canal (correo/tarea/chat), reusando el
+  // mismo pretexto persuasivo del vector pero con una excusa distinta a las
+  // ya existentes -- común en campañas reales: si un pretexto no funciona,
+  // el siguiente intento cambia de excusa, no solo de canal.
+  { name: "Autoridad — Cumplimiento: autoriza la revisión del reporte trimestral", vector: "autoridad", kind: "task", is_attack: true,
+    sender_label: "Cumplimiento y Auditoría",
+    subject_or_headline: "Autoriza el acceso al reporte trimestral antes del cierre",
+    message_body: "<p>El área de <b>Cumplimiento</b> necesita revisar el reporte trimestral de tu equipo antes del cierre de hoy. Autoriza el acceso para que la revisión quede registrada a tiempo.</p>",
+    cta_label: "Autorizar la revisión", landing_kind: "permiso",
+    landing_config: { scope: "reportes", titulo: "Cumplimiento solicita acceso a los reportes de tu cuenta de TaskFlow", detalle: "Ver los reportes y tableros de tu equipo" } },
+
+  { name: "Autoridad — Chat: el área legal necesita que confirmes un dato", vector: "autoridad", kind: "chat", is_attack: true,
+    sender_label: "Marcela Ruiz",
+    subject_or_headline: "El área legal me pidió que te preguntara algo rápido",
+    message_body: "Hola, disculpa, legal me pidió confirmar un dato de tu cuenta para cerrar un trámite interno. ¿Me confirmas por acá para no tenerte escribiendo todo el día?",
+    cta_label: "Confirmar el dato", landing_kind: "form",
+    landing_config: { titulo: "Confirmación solicitada por Legal", detalle: "Identifícate para que el trámite quede registrado." } },
+
+  { name: "Urgencia — Infraestructura: el servidor se reinicia en 15 minutos", vector: "urgencia", kind: "task", is_attack: true,
+    sender_label: "Infraestructura TI",
+    subject_or_headline: "El servidor se reinicia en 15 minutos — guarda tu sesión",
+    message_body: "<p>Vamos a reiniciar el servidor en <b>15 minutos</b> por una actualización de emergencia. Autoriza el respaldo de tu sesión actual para no perder lo que tengas sin guardar.</p>",
+    cta_label: "Respaldar mi sesión ahora", landing_kind: "permiso",
+    landing_config: { scope: "perfil", titulo: "El respaldo de emergencia solicita acceso a tu cuenta de TaskFlow", detalle: "Ver tu nombre y foto de perfil para asociar el respaldo" } },
+
+  { name: "Urgencia — Chat: me estoy quedando sin batería, confirma ya", vector: "urgencia", kind: "chat", is_attack: true,
+    sender_label: "Diego Torres",
+    subject_or_headline: "Me queda poca batería, ¿puedes confirmar esto ya?",
+    message_body: "Se me está yendo la batería y todavía no arreglo esto contigo. ¿Puedes confirmar tu acceso ahora mismo? En dos minutos se me apaga el celular.",
+    cta_label: "Confirmar acceso", landing_kind: "form",
+    landing_config: { titulo: "Confirmación urgente de acceso", detalle: "Identifícate antes de que se pierda la comunicación." } },
+
+  { name: "Escasez — Servicios Generales: quedan pocos cupos de parqueadero", vector: "escasez", kind: "task", is_attack: true,
+    sender_label: "Servicios Generales",
+    subject_or_headline: "Quedan pocos cupos de parqueadero para el próximo mes",
+    message_body: "<p>Este mes solo quedan <b>4 cupos</b> de parqueadero disponibles. Autoriza tu solicitud para quedar en la lista antes de que se asignen todos.</p>",
+    cta_label: "Solicitar mi cupo", landing_kind: "permiso",
+    landing_config: { scope: "perfil", titulo: "Servicios Generales solicita acceso a tu cuenta de TaskFlow", detalle: "Ver tu nombre para asignarte el cupo" } },
+
+  { name: "Escasez — Chat: se están acabando los cupos del taller", vector: "escasez", kind: "chat", is_attack: true,
+    sender_label: "Sofía Ramírez",
+    subject_or_headline: "Se están acabando los cupos del taller de mañana",
+    message_body: "Che, el taller de mañana se está llenando rápido, ya casi no quedan cupos. Si quieres entrar confirma tu cuenta ya mismo antes de que se acaben.",
+    cta_label: "Confirmar mi cupo", landing_kind: "form",
+    landing_config: { titulo: "Confirmación de cupo del taller", detalle: "Identifícate para reservar uno de los últimos cupos." } },
+
+  { name: "Prueba social — Seguridad: el 95% del personal ya activó la verificación en dos pasos", vector: "prueba_social", kind: "email", is_attack: true,
+    sender_label: "Seguridad TaskFlow",
+    subject_or_headline: "El 95% del personal ya activó la verificación en dos pasos",
+    message_body: "<p>Ya el <b>95% del personal</b> activó la verificación en dos pasos sin problemas. Autoriza tu cuenta para activarla tú también y no ser de los pocos que faltan.</p>",
+    cta_label: "Activar la verificación", landing_kind: "form",
+    landing_config: { titulo: "Activación de verificación en dos pasos", detalle: "Identifícate para activar la verificación en tu cuenta." } },
+
+  { name: "Prueba social — Chat: hasta Diego ya lo hizo, jaja", vector: "prueba_social", kind: "chat", is_attack: true,
+    sender_label: "Laura Méndez",
+    subject_or_headline: "Jaja hasta Diego ya hizo lo del correo de hoy",
+    message_body: "Jaja no sé si viste el correo de hoy, pero hasta Diego -que nunca hace nada a tiempo- ya lo confirmó. Yo que tú lo hago de una para que no te molesten después.",
+    cta_label: "Confirmar como Diego", landing_kind: "form",
+    landing_config: { titulo: "Confirmación pendiente", detalle: "Identifícate para quedar al día como el resto del equipo." } },
+
+  { name: "Curiosidad — Encuesta con premio sorpresa para quien participe", vector: "curiosidad", kind: "task", is_attack: true,
+    sender_label: "Bienestar Laboral",
+    subject_or_headline: "Encuesta de 2 minutos con premio sorpresa para quien participe",
+    message_body: "<p>Estamos rifando un <b>premio sorpresa</b> entre quienes respondan la encuesta de bienestar de este mes. Autoriza el acceso para participar, toma menos de 2 minutos.</p>",
+    cta_label: "Participar por el premio", landing_kind: "permiso",
+    landing_config: { scope: "perfil", titulo: "La encuesta de bienestar solicita acceso a tu cuenta de TaskFlow", detalle: "Ver tu nombre para inscribirte en la rifa" } },
+
+  { name: "Curiosidad — Organigrama actualizado con cambios de área", vector: "curiosidad", kind: "task", is_attack: true,
+    sender_label: "Recursos Humanos",
+    subject_or_headline: "Ya está el organigrama actualizado con los cambios de área",
+    message_body: "<p>Se actualizó el <b>organigrama</b> con los cambios de área anunciados este trimestre. Autoriza el acceso para ver dónde quedó tu equipo.</p>",
+    cta_label: "Ver el organigrama", landing_kind: "permiso",
+    landing_config: { scope: "equipo", titulo: "El organigrama solicita acceso a tu cuenta de TaskFlow", detalle: "Ver la lista de miembros y equipos" } },
+
+  { name: "Curiosidad — Chat: no vas a creer lo que pasó en la reunión", vector: "curiosidad", kind: "chat", is_attack: true,
+    sender_label: "Andrés Gómez",
+    subject_or_headline: "No vas a creer lo que pasó en la reunión de hoy",
+    message_body: "Uy no sabes lo que pasó hoy en la reunión, te cuento pero mejor inicia sesión que te dejé el resumen ahí para que lo leas completo jaja.",
+    cta_label: "Ver el resumen", landing_kind: "form",
+    landing_config: { titulo: "Resumen de la reunión", detalle: "Inicia sesión para ver de qué se trata." } },
+
   // ---------- BENIGNOS (relleno realista, sin página trampa) ----------
   { name: "Relleno — Bienvenida al piloto", vector: "autoridad", kind: "email", is_attack: false,
     sender_label: "Equipo TaskFlow",
@@ -305,6 +390,184 @@ export const STANDARD_LIBRARY = [
     sender_label: "Soporte TI",
     subject_or_headline: "Mantenimiento programado el sábado de 2:00 a 4:00",
     message_body: "El sábado por la madrugada el sistema estará en mantenimiento entre las 2:00 y las 4:00. No necesitas hacer nada; tus tarjetas seguirán ahí después." },
+
+  // ---------- Más relleno realista (34 mensajes adicionales) ----------
+  // Antes había solo 6 mensajes benignos frente a 25 de ataque -- una
+  // bandeja tan desbalanceada hacia el ataque no se siente como una bandeja
+  // real de trabajo. Estos 34 son deliberadamente aburridos: informativos,
+  // sin presión de tiempo ni de escasez, casi todos terminan aclarando que
+  // "no hace falta hacer nada" -- el contraste de tono con los ataques es
+  // parte de lo que se mide (¿el participante distingue el ataque del ruido
+  // normal de una bandeja?).
+  { name: "Relleno — Actualización de la app móvil disponible", vector: "autoridad", kind: "email", is_attack: false,
+    sender_label: "Producto TaskFlow",
+    subject_or_headline: "Nueva versión de la app móvil disponible",
+    message_body: "Salió una actualización de la app móvil con pequeñas correcciones. Se instala sola la próxima vez que la abras; no hace falta que hagas nada." },
+
+  { name: "Relleno — Nuevo canal de dudas técnicas", vector: "autoridad", kind: "task", is_attack: false,
+    sender_label: "Soporte TI",
+    subject_or_headline: "Nuevo canal para dudas técnicas del tablero",
+    message_body: "Abrimos un canal aparte solo para dudas técnicas del tablero, para no saturar el de anuncios generales. Úsalo cuando lo necesites, no es obligatorio." },
+
+  { name: "Relleno — Resumen de la encuesta de clima", vector: "autoridad", kind: "email", is_attack: false,
+    sender_label: "Recursos Humanos",
+    subject_or_headline: "Resumen de resultados de la encuesta de clima",
+    message_body: "Ya está el resumen de la encuesta de clima del trimestre pasado. Los resultados agregados se compartieron en la reunión general; esto es solo el resumen escrito." },
+
+  { name: "Relleno — Cambio de horario de atención de soporte", vector: "autoridad", kind: "email", is_attack: false,
+    sender_label: "Soporte TI",
+    subject_or_headline: "Nuevo horario de atención: 8:00 a 18:00",
+    message_body: "A partir de la próxima semana el horario de atención de soporte cambia a 8:00-18:00. Fuera de ese horario, los tickets se responden al día siguiente." },
+
+  { name: "Relleno — Respaldo automático programado esta noche", vector: "autoridad", kind: "task", is_attack: false,
+    sender_label: "TaskFlow",
+    subject_or_headline: "Respaldo automático de tableros esta noche",
+    message_body: "Esta noche corre el respaldo automático de todos los tableros, como cada mes. Es un proceso interno; tus tableros van a seguir disponibles con normalidad." },
+
+  { name: "Relleno — Nuevo espacio de café en el piso 3", vector: "autoridad", kind: "email", is_attack: false,
+    sender_label: "Servicios Generales",
+    subject_or_headline: "Nuevo espacio de café en el piso 3",
+    message_body: "Habilitamos un espacio de café con mesas en el piso 3. Está disponible desde hoy para quien quiera usarlo entre reuniones." },
+
+  { name: "Relleno — Actualización de la política de vacaciones", vector: "autoridad", kind: "email", is_attack: false,
+    sender_label: "Recursos Humanos",
+    subject_or_headline: "Se actualizó la política de vacaciones",
+    message_body: "Se hicieron ajustes menores a la política de vacaciones (redacción, sin cambios en los días disponibles). El documento actualizado quedó en el mismo lugar de siempre." },
+
+  { name: "Relleno — Cierre temprano el viernes por mantenimiento eléctrico", vector: "autoridad", kind: "task", is_attack: false,
+    sender_label: "Servicios Generales",
+    subject_or_headline: "El viernes se cierra temprano por mantenimiento eléctrico",
+    message_body: "El viernes las oficinas cierran a la 1:00 p.m. por mantenimiento eléctrico programado. Quien trabaje remoto no se ve afectado." },
+
+  { name: "Relleno — Bienvenida a los nuevos integrantes del equipo", vector: "autoridad", kind: "email", is_attack: false,
+    sender_label: "Comunicación Interna",
+    subject_or_headline: "Démosle la bienvenida a los nuevos integrantes",
+    message_body: "Este mes se unieron varias personas nuevas a distintos equipos. Si los ves por los pasillos (o por chat), un saludo siempre cae bien." },
+
+  { name: "Relleno — Recordatorio: renovar el certificado de parqueadero", vector: "autoridad", kind: "task", is_attack: false,
+    sender_label: "Servicios Generales",
+    subject_or_headline: "Recordatorio: renovar el certificado de parqueadero",
+    message_body: "Quienes tengan certificado de parqueadero vigente hasta este mes pueden renovarlo en la recepción, sin ningún trámite en línea." },
+
+  { name: "Relleno — Charla interna sobre gestión del tiempo", vector: "autoridad", kind: "email", is_attack: false,
+    sender_label: "Formación Interna",
+    subject_or_headline: "Grabación disponible: charla sobre gestión del tiempo",
+    message_body: "Quedó disponible la grabación de la charla interna de la semana pasada sobre gestión del tiempo, para quien no haya podido asistir en vivo." },
+
+  { name: "Relleno — Actualización de plantillas de documentos compartidos", vector: "autoridad", kind: "task", is_attack: false,
+    sender_label: "Comunicación Interna",
+    subject_or_headline: "Se actualizaron las plantillas de documentos compartidos",
+    message_body: "Las plantillas de documentos compartidos tienen un ajuste de formato menor. Los documentos ya creados no se ven afectados." },
+
+  { name: "Relleno — Resumen de la retro del sprint pasado", vector: "autoridad", kind: "task", is_attack: false,
+    sender_label: "Coordinación de Proyecto",
+    subject_or_headline: "Resumen de la retro del sprint pasado",
+    message_body: "Quedó publicado el resumen de la retrospectiva del sprint pasado, con los puntos que se acordó mejorar. Es solo informativo." },
+
+  { name: "Relleno — Nuevo formulario de solicitud de vacaciones", vector: "autoridad", kind: "email", is_attack: false,
+    sender_label: "Recursos Humanos",
+    subject_or_headline: "Nuevo formulario de solicitud de vacaciones",
+    message_body: "El formulario de solicitud de vacaciones cambió de plataforma. El proceso es el mismo; solo cambia dónde se llena." },
+
+  { name: "Relleno — Cambio de proveedor de café en la cafetería", vector: "autoridad", kind: "email", is_attack: false,
+    sender_label: "Servicios Generales",
+    subject_or_headline: "Cambio de proveedor de café en la cafetería",
+    message_body: "Desde esta semana la cafetería cambió de proveedor de café. Si tienes comentarios sobre el sabor, hay un buzón físico en la cafetería." },
+
+  { name: "Relleno — Actualización del manual de estilo de marca", vector: "autoridad", kind: "task", is_attack: false,
+    sender_label: "Diseño de Producto",
+    subject_or_headline: "Se actualizó el manual de estilo de marca",
+    message_body: "El manual de estilo de marca tiene una versión nueva con los colores y tipografías vigentes. Solo aplica si trabajas en materiales de comunicación." },
+
+  { name: "Relleno — Jornada de reciclaje electrónico", vector: "autoridad", kind: "email", is_attack: false,
+    sender_label: "Servicios Generales",
+    subject_or_headline: "Recordatorio: jornada de reciclaje electrónico el jueves",
+    message_body: "El jueves hay una jornada de reciclaje de aparatos electrónicos viejos en la entrada principal. Es voluntario, no requiere inscripción." },
+
+  { name: "Relleno — Nueva biblioteca de íconos para diseño", vector: "autoridad", kind: "task", is_attack: false,
+    sender_label: "Diseño de Producto",
+    subject_or_headline: "Nueva biblioteca de íconos disponible",
+    message_body: "El equipo de diseño publicó una biblioteca de íconos actualizada. Solo es relevante si trabajas en piezas visuales del producto." },
+
+  { name: "Relleno — Ajuste en el horario del bus de la empresa", vector: "autoridad", kind: "email", is_attack: false,
+    sender_label: "Servicios Generales",
+    subject_or_headline: "Ajuste de 10 minutos en el horario del bus de la empresa",
+    message_body: "El bus de la empresa ajusta su horario de salida 10 minutos más tarde a partir de la próxima semana. El recorrido no cambia." },
+
+  { name: "Relleno — Mantenimiento del wifi el sábado", vector: "autoridad", kind: "task", is_attack: false,
+    sender_label: "Soporte TI",
+    subject_or_headline: "Mantenimiento del wifi el sábado en la mañana",
+    message_body: "El sábado en la mañana el wifi de las oficinas va a tener cortes breves por mantenimiento. No afecta el trabajo remoto." },
+
+  { name: "Relleno — Recordatorio: actualizar tu foto de perfil (opcional)", vector: "autoridad", kind: "email", is_attack: false,
+    sender_label: "TaskFlow",
+    subject_or_headline: "Recordatorio opcional: actualiza tu foto de perfil",
+    message_body: "Si quieres, puedes actualizar tu foto de perfil desde tu cuenta. Es completamente opcional, solo un recordatorio de vez en cuando." },
+
+  { name: "Relleno — Nuevo canal de sugerencias anónimas", vector: "autoridad", kind: "task", is_attack: false,
+    sender_label: "Recursos Humanos",
+    subject_or_headline: "Nuevo canal de sugerencias, totalmente anónimo",
+    message_body: "Abrimos un canal de sugerencias anónimo para ideas de mejora. Nadie ve quién escribió qué; es completamente voluntario." },
+
+  { name: "Relleno — Resumen del town hall trimestral", vector: "autoridad", kind: "email", is_attack: false,
+    sender_label: "Comunicación Interna",
+    subject_or_headline: "Resumen del town hall trimestral",
+    message_body: "Para quien no haya podido asistir, este es el resumen escrito del town hall trimestral de la semana pasada. Solo lectura." },
+
+  { name: "Relleno — Cambio de fecha del taller de diseño", vector: "autoridad", kind: "task", is_attack: false,
+    sender_label: "Formación Interna",
+    subject_or_headline: "El taller de diseño se corre para la próxima semana",
+    message_body: "El taller interno de diseño se movió una semana por disponibilidad de la sala. Si ya te habías inscrito, tu cupo se mantiene igual." },
+
+  { name: "Relleno — Día de trabajo remoto opcional este mes", vector: "autoridad", kind: "email", is_attack: false,
+    sender_label: "Recursos Humanos",
+    subject_or_headline: "Recordatorio: día de trabajo remoto opcional este mes",
+    message_body: "Como cada mes, hay un día de trabajo remoto opcional para todo el personal. Coordina con tu equipo si decides tomarlo." },
+
+  { name: "Relleno — Vacantes internas del trimestre", vector: "autoridad", kind: "email", is_attack: false,
+    sender_label: "Recursos Humanos",
+    subject_or_headline: "Vacantes internas abiertas este trimestre",
+    message_body: "Se publicaron las vacantes internas de este trimestre. Si te interesa alguna, el proceso de postulación está descrito en el mismo aviso." },
+
+  { name: "Relleno — Actualización informativa de términos de uso", vector: "autoridad", kind: "task", is_attack: false,
+    sender_label: "Asuntos Legales",
+    subject_or_headline: "Actualización informativa de los términos de uso del tablero",
+    message_body: "Se hizo una actualización menor a los términos de uso del tablero, solo de redacción. No requiere ninguna acción de tu parte." },
+
+  { name: "Relleno — Nuevo horario de la sala de reuniones principal", vector: "autoridad", kind: "email", is_attack: false,
+    sender_label: "Servicios Generales",
+    subject_or_headline: "Nuevo horario disponible para la sala de reuniones principal",
+    message_body: "La sala de reuniones principal ahora se puede reservar también después de las 5:00 p.m. El proceso de reserva sigue siendo el mismo." },
+
+  { name: "Relleno — Resumen de indicadores del proyecto", vector: "autoridad", kind: "task", is_attack: false,
+    sender_label: "Coordinación de Proyecto",
+    subject_or_headline: "Resumen mensual de indicadores del proyecto",
+    message_body: "Quedó publicado el resumen mensual de indicadores del proyecto. Es de solo lectura, para quien quiera revisarlo con calma." },
+
+  { name: "Relleno — Recordatorio: jornada de donación de sangre", vector: "autoridad", kind: "email", is_attack: false,
+    sender_label: "Bienestar Laboral",
+    subject_or_headline: "Recordatorio: jornada de donación de sangre el martes",
+    message_body: "El martes hay jornada de donación de sangre en el auditorio, organizada con la Cruz Roja. Es voluntaria y no requiere inscripción previa." },
+
+  { name: "Relleno — Cambio en el proceso de reserva de salas", vector: "autoridad", kind: "task", is_attack: false,
+    sender_label: "Servicios Generales",
+    subject_or_headline: "Pequeño cambio en el proceso de reserva de salas",
+    message_body: "El proceso de reserva de salas tiene un paso adicional (confirmar asistentes). Fuera de eso, funciona igual que antes." },
+
+  { name: "Relleno — Guía rápida de atajos de teclado del tablero", vector: "autoridad", kind: "email", is_attack: false,
+    sender_label: "TaskFlow",
+    subject_or_headline: "Guía rápida de atajos de teclado del tablero",
+    message_body: "Publicamos una guía corta con los atajos de teclado del tablero, por si quieres moverte más rápido entre tarjetas. Es opcional." },
+
+  { name: "Relleno — Recordatorio: actualizar datos de contacto de emergencia", vector: "autoridad", kind: "email", is_attack: false,
+    sender_label: "Recursos Humanos",
+    subject_or_headline: "Recordatorio anual: datos de contacto de emergencia",
+    message_body: "Como cada año, es buen momento para revisar que tus datos de contacto de emergencia en tu ficha estén al día. No es obligatorio actualizarlos si ya están correctos." },
+
+  { name: "Relleno — La cafetería cierra por inventario el lunes", vector: "autoridad", kind: "task", is_attack: false,
+    sender_label: "Servicios Generales",
+    subject_or_headline: "La cafetería estará cerrada por inventario el lunes",
+    message_body: "El lunes la cafetería no abre por inventario general. Vuelve a funcionar con normalidad desde el martes." },
 ];
 
 templatesRouter.post("/seed-defaults", requireAdmin, async (req, res) => {

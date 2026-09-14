@@ -26,6 +26,24 @@ function behaviorCaptureTag(token, phase, deliveryId) {
   return `<script src="/js/behavior-capture.js" ${attrs.join(" ")}></script>`;
 }
 
+// Captura facial biométrica (extensión fuera del alcance original de TG
+// §8.2 Fase 1 -- ver docs/2026-09-12_captura-facial-biometrica.md). Nunca se
+// emite si `cameraConsent` no es TRUE: a diferencia de behaviorCaptureTag
+// (que solo depende de haber llegado a esta pantalla), esta requiere el
+// consentimiento SEPARADO de cámara (participants.camera_consent_given) --
+// sin él, el script ni siquiera se referencia en el HTML, así que el
+// navegador nunca pide permiso de cámara.
+function facialCaptureTag(token, phase, cameraConsent, deliveryId) {
+  if (!cameraConsent) return "";
+  const attrs = [
+    `data-token="${escapeHtml(token)}"`,
+    `data-phase="${escapeHtml(phase)}"`,
+    `data-camera-consent="1"`,
+  ];
+  if (deliveryId) attrs.push(`data-delivery-id="${escapeHtml(deliveryId)}"`);
+  return `<script src="/js/facial-capture.js" ${attrs.join(" ")}></script>`;
+}
+
 function shell(title, bodyHtml, opts = {}) {
   return `<!doctype html><html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -338,6 +356,8 @@ export function renderWelcome(token, campaignName) {
     <form method="POST" action="/t/${encodeURIComponent(token)}/consent">
       <label class="check"><input type="checkbox" name="consent" value="1" required>
         <span>He leído lo anterior y acepto participar en el piloto.</span></label>
+      <label class="check"><input type="checkbox" name="camera_consent" value="1">
+        <span>Además, acepto que se use mi cámara para derivar señales faciales (parpadeo, mirada, tensión de ceja/boca) durante la sesión. Es opcional y por separado del punto anterior: nunca se guarda video ni imágenes, solo esos valores. Puedo pausarlo en cualquier momento desde un aviso en pantalla.</span></label>
       <button class="btn block" type="submit">Comenzar</button>
     </form>
     <p class="note">Campaña: ${escapeHtml(campaignName || "—")} · Ejercicio académico autorizado.</p>
@@ -374,7 +394,7 @@ export function renderWelcome(token, campaignName) {
 const CALIBRATION_TARGET_CLICKS = 8;
 const CALIBRATION_PHRASE = "El veloz murciélago hindú comía feliz cardillo y kiwi.";
 
-export function renderCalibration(token) {
+export function renderCalibration(token, cameraConsent) {
   const t = encodeURIComponent(token);
   return shell("Calibración — TaskFlow", `
 <div class="plate">
@@ -451,10 +471,11 @@ export function renderCalibration(token) {
   }, 100);
 })();
 </script>
-${behaviorCaptureTag(token, "calibration")}`);
+${behaviorCaptureTag(token, "calibration")}
+${facialCaptureTag(token, "calibration", cameraConsent)}`);
 }
 
-export function renderApp(token, { inbox, view, boardsData, contacts, boardTemplates }) {
+export function renderApp(token, { inbox, view, boardsData, contacts, boardTemplates, cameraConsent }) {
   const t = encodeURIComponent(token);
   const unread = inbox.filter((m) => m.unread).length;
   const active = isView(view) ? view : DEFAULT_VIEW;
@@ -982,7 +1003,8 @@ function tfChat(){
   document.addEventListener('visibilitychange',function(){ if(!document.hidden) tick(); });
 })();
 </script>
-${behaviorCaptureTag(token, "app")}`, {
+${behaviorCaptureTag(token, "app")}
+${facialCaptureTag(token, "app", cameraConsent)}`, {
     head: `<script defer src="/vendor/alpine.min.js"></script>`,
     extraCss: `
 [x-cloak]{display:none!important}
@@ -1128,7 +1150,8 @@ function tfBranch(deliveryId, actionKey, btn){
   }).catch(function(){ btn.disabled = false; });
 }
 </script>
-${behaviorCaptureTag(token, "message", msg.deliveryId)}`);
+${behaviorCaptureTag(token, "message", msg.deliveryId)}
+${facialCaptureTag(token, "message", msg.cameraConsent, msg.deliveryId)}`);
 }
 
 export function renderStimulusLanding(token, delivery) {
@@ -1169,7 +1192,8 @@ export function renderStimulusLanding(token, delivery) {
   </div>
 </div>
 <p class="note" style="text-align:center;margin-top:1rem">Ejercicio académico · no se accede realmente a ninguna cuenta ni recurso.</p>
-${behaviorCaptureTag(token, "landing", delivery.deliveryId)}`);
+${behaviorCaptureTag(token, "landing", delivery.deliveryId)}
+${facialCaptureTag(token, "landing", delivery.cameraConsent, delivery.deliveryId)}`);
   }
 
   const cfg = delivery.landing_config || {};
@@ -1195,7 +1219,8 @@ document.getElementById('f').addEventListener('submit',function(e){
    .then(function(){location.href='/t/${t}/action-done'});
 });
 </script>
-${behaviorCaptureTag(token, "landing", delivery.deliveryId)}`);
+${behaviorCaptureTag(token, "landing", delivery.deliveryId)}
+${facialCaptureTag(token, "landing", delivery.cameraConsent, delivery.deliveryId)}`);
 }
 
 // Capa de intervención PAWS (jolting cognitivo, TG §8.2.5). Se muestra solo
@@ -1294,7 +1319,7 @@ export function renderActionDone(token) {
 </div>`);
 }
 
-export function renderSurvey(token, schema) {
+export function renderSurvey(token, schema, cameraConsent) {
   const t = encodeURIComponent(token);
   const vq = schema.vector_question, cq = schema.common;
   const radio = (name, q) => `
@@ -1332,10 +1357,19 @@ export function renderSurvey(token, schema) {
     </form>
   </div>
 </div>
-${behaviorCaptureTag(token, "survey")}`);
+${behaviorCaptureTag(token, "survey")}
+${facialCaptureTag(token, "survey", cameraConsent)}`);
 }
 
-export function renderDebrief(html) {
+// `token`/`origin` son opcionales solo por retrocompatibilidad de la firma;
+// todo llamador real de esta pantalla (tracking.js) sí los pasa -- es lo
+// único que le queda al participante para poder ejercer el retiro de datos
+// de la sección 9.1 más adelante, así que se guarda como URL ABSOLUTA (no
+// basta con la ruta relativa: el participante puede cerrar la pestaña hoy y
+// querer usar el enlace días después, desde otra pestaña o dispositivo).
+export function renderDebrief(html, token, origin) {
+  const t = token ? encodeURIComponent(token) : null;
+  const withdrawUrl = t ? `${origin || ""}/t/${t}/withdraw` : null;
   return shell("Información sobre el estudio", `
 <div class="debrief">
   <div class="card">
@@ -1343,6 +1377,11 @@ export function renderDebrief(html) {
     <h1>Información sobre el estudio</h1>
     <p>${html.replace(/\n\n/g, "</p><p>")}</p>
     <p style="margin-top:1.5rem;color:var(--faint);font-size:.9rem">Ya puedes cerrar esta pestaña. Gracias por tu participación.</p>
+    ${withdrawUrl ? `
+    <p style="margin-top:1.25rem;padding-top:1.25rem;border-top:1px solid var(--line-soft);font-size:.85rem;color:var(--muted)">
+      Tu participación es revocable en cualquier momento, incluso después de hoy. Si más adelante quieres que se borren tus datos, guarda este enlace:
+      <br><a href="${withdrawUrl}" style="color:var(--ink-2);word-break:break-all">${escapeHtml(withdrawUrl)}</a>
+    </p>` : ""}
   </div>
 </div>
 <script>try{for(var i=localStorage.length-1;i>=0;i--){var k=localStorage.key(i);if(k&&k.indexOf('tf_board_')===0)localStorage.removeItem(k);}}catch(e){}</script>`);
@@ -1354,5 +1393,30 @@ export function renderInvalid(msg) {
   <div class="brand" style="justify-content:center">${LOGO} TaskFlow</div>
   <h1>Enlace no válido</h1>
   <p class="sub">${escapeHtml(msg || "Este enlace no es válido o ya ha caducado.")}</p>
+</div></div>`);
+}
+
+// Retiro de datos post-sesión (TG §9.1, lib/withdrawal.js). Pantalla de
+// confirmación explícita -- el borrado es permanente y de un solo sentido,
+// así que no se dispara con un simple GET del enlace.
+export function renderWithdrawConfirm(token) {
+  const t = encodeURIComponent(token);
+  return shell("Retirar mis datos", `
+<div class="plate"><div class="sheet" style="text-align:center">
+  <div class="brand" style="justify-content:center">${LOGO} TaskFlow</div>
+  <h1>Retirar mis datos de este estudio</h1>
+  <p class="sub">Esto borra permanentemente todo lo registrado en tu sesión: los eventos de mouse y teclado, las señales faciales (si diste ese consentimiento aparte), tus respuestas a la encuesta final y tu participación en la campaña. No se puede deshacer, y este enlace deja de funcionar después.</p>
+  <form method="POST" action="/t/${t}/withdraw">
+    <button class="btn block" type="submit" style="background:var(--warn);border-color:var(--warn)">Sí, borrar todos mis datos</button>
+  </form>
+</div></div>`);
+}
+
+export function renderWithdrawn() {
+  return shell("Datos retirados", `
+<div class="plate"><div class="sheet" style="text-align:center">
+  <div class="brand" style="justify-content:center">${LOGO} TaskFlow</div>
+  <h1>Tus datos fueron retirados</h1>
+  <p class="sub">Se eliminó toda la información asociada a tu sesión. Este enlace ya no funciona. Gracias por haber participado.</p>
 </div></div>`);
 }
