@@ -159,9 +159,21 @@ test("force:true reasigna a quienes ya tenían grupo, pero nunca a quien ya empe
   const ids = imp.body.participants.map((p) => p.id);
   const gen = await api("POST", `/api/campaigns/${campaignId}/generate-tokens`, { participant_ids: ids });
 
-  // El primer participante YA empieza su sesión de verdad (consiente, pasa
-  // la calibración, y abre /app) antes de que se corra la reasignación.
-  const tokenStarted = gen.body.links[0].url.split("/").pop();
+  // El primer participante (ids[0]) YA empieza su sesión de verdad (consiente,
+  // pasa la calibración, y abre /app) antes de que se corra la reasignación.
+  //
+  // OJO: generate-tokens devuelve `links` ordenados por p.id (UUID), NO en el
+  // orden de `participant_ids` que se le pasó (ver ORDER BY p.id en
+  // campaigns.js) — así que `links[0]` NO es de fiar como "el link de
+  // ids[0]": al ser un UUID aleatorio, con ~50% de probabilidad corresponde
+  // a ids[1] en su lugar. Antes este test asumía `links[0]` === ids[0] y
+  // fallaba de forma intermitente (~40% de las corridas) exactamente por
+  // eso: cuando el orden salía "al revés", terminaba comprobando el grupo
+  // del participante equivocado. Se busca el link por participant_id en vez
+  // de por posición para que el test sea determinista sin importar el
+  // orden en que Postgres devuelva las filas.
+  const linkFor = (participantId) => gen.body.links.find((l) => l.participant_id === participantId).url.split("/").pop();
+  const tokenStarted = linkFor(ids[0]);
   await form(`/t/${tokenStarted}/consent`, "consent=1");
   await completeCalibration(tokenStarted);
   const appRes = await hop(`/t/${tokenStarted}/app`);
